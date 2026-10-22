@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, BookMarked, BookOpen, Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, FileText, Highlighter, Info, Languages, List, LoaderCircle, Maximize2, Minus, NotebookPen, Pencil, Plus, Search, Trash2, Type, X } from 'lucide-react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
-import { TextLayer } from 'pdfjs-dist';
+import { TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { loadPdf } from './pdf';
 import type { Annotation, Book, Language, MarkColor, Rect, SelectionData } from './types';
 import { notesMarkdown, saveFile } from './storage';
@@ -10,8 +10,8 @@ import { randomId } from './browser-compat';
 import { pdfBitmapSize } from './pdf-resolution';
 
 const langLabel = (lang: Language) => lang === 'zh' ? '中文' : lang === 'en' ? '英文' : '对照';
-type Props = { book: Book; onBack: () => void; onUpdate: (patch: Partial<Book>) => Promise<void>; notify: (message: string) => void };
-export default function Reader({ book, onBack, onUpdate, notify }: Props) {
+type Props = { book: Book; onBack: () => void; onUpdate: (patch: Partial<Book>) => Promise<void>; onReload?: () => Promise<void>; notify: (message: string) => void };
+export default function Reader({ book, onBack, onUpdate, onReload, notify }: Props) {
   const [page, setPage] = useState(book.page);
   const [language, setLanguage] = useState<Language>(book.bilingual ? 'zh' : 'en');
   const [mode, setMode] = useState<'flow' | 'pdf'>('pdf');
@@ -19,6 +19,8 @@ export default function Reader({ book, onBack, onUpdate, notify }: Props) {
   const [zoom, setZoom] = useState(1);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [pdfError, setPdfError] = useState('');
+  const [retrying, setRetrying] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [panel, setPanel] = useState<'notes' | 'glossary' | 'pages' | null>(null);
   const [selection, setSelection] = useState<SelectionData | null>(null);
   const [editor, setEditor] = useState<Annotation | null>(null);
@@ -40,13 +42,26 @@ export default function Reader({ book, onBack, onUpdate, notify }: Props) {
   useEffect(() => {
     let cancelled = false;
     let task: ReturnType<typeof loadPdf> | undefined;
+    setPdf(null); setPdfError('');
     book.blob.arrayBuffer().then(bytes => {
       if (cancelled) return;
       task = loadPdf(bytes);
       return task.promise.then(doc => { if (!cancelled) setPdf(doc); });
-    }).catch(() => { if (!cancelled) setPdfError('这份 PDF 暂时无法渲染，请重新导入或检查文件是否加密。'); });
-    return () => { cancelled = true; task?.destroy(); };
-  }, [book.id]);
+    }).catch(error => {
+      if (!cancelled) {
+        console.warn('PDF document loading failed', error);
+        setPdfError(error?.name === 'PasswordException' ? '这份 PDF 需要密码。' : 'PDF 加载失败，请重试。');
+      }
+    });
+    return () => { cancelled = true; void task?.destroy().catch(() => {}); };
+  }, [book.id, book.blob, loadAttempt]);
+  async function retryPdf() {
+    setRetrying(true);
+    try {
+      if (onReload) await onReload();
+      else setLoadAttempt(attempt => attempt + 1);
+    } finally { setRetrying(false); }
+  }
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     const read = () => {
@@ -114,7 +129,7 @@ export default function Reader({ book, onBack, onUpdate, notify }: Props) {
           </section>)}
           {!segments.length&&<div className="panel-empty"><FileText size={30}/><h3>这一页请查看原版</h3><button className="primary-button" onClick={()=>setMode('pdf')}>打开第 {page} 页 PDF</button></div>}
           <div className="page-end"><span>第 {page} 页 · 段落结束</span>{page<book.pages&&<button onClick={()=>changePage(page+1)}>下一页<ArrowRight size={17}/></button>}</div>
-        </div> : <div className="pdf-document"><div className="pdf-hint"><span>{book.bilingual?(language==='both'?'左英文 · 右中文':language==='zh'?'中文侧':'英文侧'):'原版 PDF'}</span>{zoom>1&&<span>可横向滑动查看</span>}</div>{pdfError?<div className="empty-state"><p>{pdfError}</p></div>:!pdf?<div className="loading-state"><LoaderCircle className="spin"/><p>正在加载 PDF…</p></div>:<PdfPage pdf={pdf} page={page} language={language} bilingual={book.bilingual} zoom={zoom} annotations={book.annotations.filter(n=>n.page===page)} onSelection={setSelection} onError={setPdfError}/>}</div>}
+        </div> : <div className="pdf-document"><div className="pdf-hint"><span>{book.bilingual?(language==='both'?'左英文 · 右中文':language==='zh'?'中文侧':'英文侧'):'原版 PDF'}</span>{zoom>1&&<span>可横向滑动查看</span>}</div>{pdfError?<div className="empty-state"><p>{pdfError}</p><button className="secondary-button" disabled={retrying} onClick={()=>void retryPdf()}>{retrying?'正在加载…':'重新加载'}</button></div>:!pdf?<div className="loading-state"><LoaderCircle className="spin"/><p>正在加载 PDF…</p></div>:<PdfPage pdf={pdf} page={page} language={language} bilingual={book.bilingual} zoom={zoom} annotations={book.annotations.filter(n=>n.page===page)} onSelection={setSelection} onError={setPdfError}/>}</div>}
       </div><footer className="reader-pagination"><button className="icon-button" aria-label="上一页" disabled={page===1} onClick={()=>changePage(page-1)}><ChevronLeft size={20}/></button><label className="page-number"><input aria-label="跳转页码" key={page} defaultValue={page} inputMode="numeric" onBlur={e=>{const next=Number(e.target.value);if(Number.isInteger(next)&&next>=1&&next<=book.pages)changePage(next);else e.target.value=String(page);}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/><span>/ {book.pages} 页</span></label><button className="icon-button" aria-label="下一页" disabled={page===book.pages} onClick={()=>changePage(page+1)}><ChevronRight size={20}/></button><span className="pagination-divider"/><button ref={bookmarkRef} aria-pressed={isBookmarked} className={`bookmark-page ${isBookmarked?'active':''}`} aria-label={isBookmarked?'取消本页书签':'收藏本页'} onClick={()=>onUpdate({bookmarks:isBookmarked?book.bookmarks.filter(p=>p!==page):[...book.bookmarks,page]}).catch(()=>{})}><Bookmark size={17} fill={isBookmarked?'currentColor':'none'}/></button><button className="mobile-notes-toggle" onClick={()=>setPanel(panel ? null : 'notes')}><NotebookPen size={18}/><span>笔记</span>{book.annotations.length>0&&<b>{book.annotations.length}</b>}</button><button className="mobile-directory icon-button" aria-label="页码与目录" onClick={()=>setPanel('pages')}><List size={18}/></button></footer></div>
       <aside className={`reader-panel ${panel?'is-open':''}`}>{panelBody}</aside>
       {panel&&<button className="panel-scrim" aria-label="关闭侧面板" onClick={()=>setPanel(null)}/>}

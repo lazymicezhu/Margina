@@ -53,6 +53,8 @@ Paragraph mode is an alternate view of translation-job segments, not a PDF extra
 
 ## Network and deployment boundary
 
+The reader, thumbnail loader and text layer use the same PDF.js legacy build and matching versioned worker asset for Safari compatibility. Public cached blobs are checked against their SHA-256 IDs before use; failed reads or mismatches fetch a fresh PDF with the HTTP cache bypassed. Only file fields are patched, preserving guest annotations, bookmarks and progress. Reader reload replaces the blob without changing account records, and restarts document loading when that blob changes.
+
 Runtime PDF resources are served locally from `/pdf-assets/`; no CDN or translation endpoint is used. Optional samples are fetched from `/samples/catalog.json`. Missing samples (including a static host's HTML fallback) result in an empty library.
 
 Local Wi-Fi previews can bind Vite preview to `0.0.0.0`. `src/browser-compat.ts` preserves SHA-256 book identities and UUID annotation IDs when HTTP LAN origins lack SubtleCrypto / randomUUID; hashing and data storage remain browser-side. Clipboard copying falls back to the browser copy command.

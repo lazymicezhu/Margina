@@ -15,6 +15,7 @@ A mobile-first web reader for bilingual academic papers, with highlights, notes,
 - Retain the original local-only library under Settings → Local documents; existing files are never automatically published.
 
 - Import PDFs, deduplicate by SHA-256, search the library, and star papers.
+- Use the PDF.js compatibility build for Safari. Public PDF caches are checked before reading and replaced if unreadable or mismatched, preserving notes and progress; failed reads offer a reload action.
 - Read the Chinese half, English half, or full spread of a bilingual PDF. PDF rendering follows screen pixel density and redraws after pinch zoom, within a bounded bitmap memory budget; low-resolution scans retain their source detail.
 - Open in the original PDF by default, with the Chinese half selected for bilingual papers, even when a reading bundle is present. Manually switch to mobile-friendly paragraphs using a matching translation bundle; compare languages and consult the original glossary.
 - Highlight PDF text, attach notes to pages or segments, and save bookmarks and progress.

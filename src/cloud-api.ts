@@ -3,6 +3,7 @@ import type { Book } from './types';
 import { validateBundle } from './bundle';
 import { listBooks, putBook, patchBook, setting } from './storage';
 import { makeBook } from './pdf';
+import { sha256 } from './browser-compat';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public body?: unknown) { super(message); }
@@ -30,15 +31,28 @@ export async function uploadBundle(file: File, user: string) {
   const options = jsonOptions('PUT', bundle);
   return api<{ paper: Paper }>(`/api/private/papers/${bundle.pdfSha256}/bundle`, { ...options, headers: { ...options.headers, 'X-Margina-User': user, 'X-Public-Upload': 'confirmed' } });
 }
-// File blobs are shared locally; account annotations are never written here.
-export async function cachePaper(paper: Paper): Promise<Book> {
+export async function cachedPdfValid(book: Book): Promise<boolean> {
+  try {
+    return book.blob instanceof Blob && book.blob.size === book.size &&
+      await sha256(await book.blob.arrayBuffer()) === book.id;
+  } catch { return false; }
+}
+// File blobs are shared locally; repairing them must preserve guest records too.
+export async function cachePaper(paper: Paper, forceDownload = false): Promise<Book> {
   let book = (await listBooks()).find(b => b.id === paper.id);
-  if (!book) {
-    const response = await fetch(`/api/papers/${paper.id}/pdf`);
+  if (!book || forceDownload || !(await cachedPdfValid(book))) {
+    const response = await fetch(`/api/papers/${paper.id}/pdf`, { cache: 'no-store' });
     if (!response.ok) throw new Error('PDF 加载失败，请重试');
-    book = await makeBook(await response.blob(), paper.fileName);
-    if (book.id !== paper.id || book.pages !== paper.pages) throw new Error('PDF 校验失败，请联系上传者');
-    await putBook(book);
+    const fresh = await makeBook(await response.blob(), paper.fileName);
+    if (fresh.id !== paper.id || fresh.pages !== paper.pages) throw new Error('PDF 校验失败，请联系上传者');
+    if (book) {
+      const files = { blob: fresh.blob, size: fresh.size, pages: fresh.pages, cover: fresh.cover, fileName: fresh.fileName };
+      await patchBook(book.id, files);
+      book = { ...book, ...files };
+    } else {
+      book = fresh;
+      await putBook(book);
+    }
   }
   const revision = await setting(`public-bundle:${paper.id}`);
   const metadata: Partial<Book> = { title: paper.title, author: paper.author, bilingual: paper.bilingual };

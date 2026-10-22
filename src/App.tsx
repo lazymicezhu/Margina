@@ -3,7 +3,7 @@ import { ArrowDownToLine, ArrowRight, BookOpen, Check, ChevronRight, Cloud, Fold
 import type { Book } from './types';
 import type { AccountState, Paper, ReadingData, Session } from './cloud-types';
 import { emptyReading } from './cloud-types';
-import { api, cachePaper, catalog, getPaper, jsonOptions, session, uploadBundle, uploadPdf } from './cloud-api';
+import { api, cachePaper, cachedPdfValid, catalog, getPaper, jsonOptions, session, uploadBundle, uploadPdf } from './cloud-api';
 import { editReading, readAccount, syncAccount } from './sync';
 import { mergeReading } from './sync-merge';
 import { listBooks, notesMarkdown, patchBook, saveFile, setting } from './storage';
@@ -168,7 +168,7 @@ export default function App() {
       const id = userRef.current?.id;
       let book: Book;
       try { book = await cachePaper(paper); }
-      catch (error) { const local = (await listBooks()).find(b => b.id === paper.id); if (!local) throw error; book = local; notify('正在阅读本机缓存，未能获取最新阅读包。'); }
+      catch (error) { const local = (await listBooks()).find(b => b.id === paper.id); if (!local || !(await cachedPdfValid(local))) throw error; book = local; notify('正在阅读本机缓存，未能获取最新阅读包。'); }
       if (userRef.current?.id !== id) return;
       setCached(await listBooks());
       if (id) {
@@ -178,6 +178,16 @@ export default function App() {
       } else {
         await patchBook(book.id, { opened: Date.now() }); setActive({ ...book, opened: Date.now() });
       }
+    });
+  }
+  async function reloadActivePdf() {
+    const activeBook = activeRef.current;
+    if (!activeBook) return;
+    const userId = userRef.current?.id;
+    await run('正在重新加载 PDF…', async () => {
+      const book = await cachePaper(await getPaper(activeBook.id), true);
+      if (userRef.current?.id !== userId) return;
+      setActive(current => current?.id === book.id ? { ...current, blob: book.blob, cover: book.cover } : current);
     });
   }
   async function updateReading(patch: Partial<Book>) {
@@ -265,7 +275,7 @@ export default function App() {
   const closeAdmin = () => { setAdminOpen(false); history.replaceState(null, '', '/'); void refreshCatalog(); };
 
   return <>
-    {active ? <Reader key={`${accountId || 'guest'}:${active.id}`} book={active} onBack={() => { setActive(null); void listBooks().then(setCached); }} onUpdate={updateReading} notify={notify} /> :
+    {active ? <Reader key={`${accountId || 'guest'}:${active.id}`} book={active} onBack={() => { setActive(null); void listBooks().then(setCached); }} onUpdate={updateReading} onReload={reloadActivePdf} notify={notify} /> :
       adminOpen ? current.user?.admin ? <AdminPanel key={accountId} user={current.user} revision={adminRevision} onClose={closeAdmin} onUpload={() => setUpload(true)} onChanged={() => { setKnown({}); void refreshCatalog(); }} /> : <main className="admin-shell"><button className="text-button" onClick={closeAdmin}><ArrowRight size={17} />返回书库</button><div className="empty-state"><h1>管理后台</h1>{current.user ? <p>需要管理员权限</p> : <button className="primary-button" onClick={() => setLogin(true)}>登录</button>}</div></main> :
       <div className="app-shell cloud-shell">
         <aside className="sidebar"><Logo /><nav aria-label="主导航">

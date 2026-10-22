@@ -20,7 +20,7 @@
 
 ## Later: Cloudflare and sync
 
-The local implementation now includes static hosting configuration, authenticated APIs, a D1 database and R2 file storage, with version checks and conflict copies. Worker, D1 and R2 have been provisioned at the user’s request. Path-scoped Access and email-code login are configured. Next: validate an authenticated session, evaluate public-service upload quotas/rate limits, and test actual free-plan CPU/load and large files. Verify the actual free-tier limits at implementation time; no free-usage or cost guarantee is made by this prototype. The public site is deployed; the email-code login page is available.
+The local implementation now includes static hosting configuration, authenticated APIs, a D1 database and R2 file storage, with version checks and conflict copies. Worker, D1 and R2 have been provisioned at the user’s request. Path-scoped Access and email-code login are configured. An authenticated administrator library view is verified. Next: validate administrative mutations, evaluate public-service upload quotas/rate limits, and test actual free-plan CPU/load and large files. Verify the actual free-tier limits at implementation time; no free-usage or cost guarantee is made by this prototype. The public site is deployed; the email-code login page is available.
 
 ## Validation baseline — 2026-10-22
 
@@ -39,4 +39,4 @@ The local implementation now includes static hosting configuration, authenticate
 
 ## Administrator update — 2026-10-23
 
-Administrator endpoints and mobile layouts are implemented. Per user request, local runtime and browser tests were not run for this update; online checks confirm the public catalog and protected login redirects; authenticated backend interactions remain to be validated. Cloudflare deployment instructions and commands are available in `docs/CLOUDFLARE.md`.
+Administrator endpoints and mobile layouts are implemented. Per user request, local runtime and browser tests were not run for this update; online checks confirm the public catalog and protected login redirects; an authenticated administrator library view also loads on the custom domain; backend mutations remain to be validated. Cloudflare deployment instructions and commands are available in `docs/CLOUDFLARE.md`.

@@ -96,7 +96,7 @@ export default {
       if (path.startsWith('/api/private/admin/')) return await adminRequest(request, env, user, { json, publicPaper, publicRecord, discard });
       if (path === '/api/private/login' && request.method === 'GET') return Response.redirect(`${url.origin}${url.searchParams.get('next') === '/admin' ? '/admin' : '/'}`, 302);
       if (path === '/api/private/uploads' && request.method === 'GET') {
-        const { results } = await env.DB.prepare('SELECT * FROM papers WHERE owner = ? ORDER BY created DESC LIMIT 200').bind(user.id).all();
+        const { results } = await env.DB.prepare('SELECT * FROM papers WHERE owner = ? AND removed <> 2 ORDER BY created DESC LIMIT 200').bind(user.id).all();
         return json({ papers: results.map(publicPaper) });
       }
       if (path === '/api/private/records' && request.method === 'GET') {

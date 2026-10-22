@@ -37,8 +37,8 @@ export async function adminRequest(request, env, user, { json, publicPaper, publ
   }
   if (path === '/api/private/admin/papers' && request.method === 'GET') {
     const status = url.searchParams.get('status') || 'all';
-    check(['all', 'active', 'withdrawn', 'deleted'].includes(status), '状态不正确');
-    const filter = { all: '1 = 1', active: 'p.removed = 0', withdrawn: 'p.removed = 1', deleted: 'p.removed >= 2' }[status];
+    check(['all', 'active', 'withdrawn', 'incomplete', 'deleted'].includes(status), '状态不正确');
+    const filter = { all: 'p.removed <> 2', active: 'p.removed = 0', withdrawn: 'p.removed = 1', incomplete: 'p.removed = 3', deleted: 'p.removed = 3' }[status];
     const { results } = await env.DB.prepare(`SELECT p.*, u.email AS owner_email FROM papers p
       LEFT JOIN users u ON u.id = p.owner WHERE ${filter} AND
       (instr(lower(p.title), lower(?)) > 0 OR instr(lower(p.author), lower(?)) > 0)

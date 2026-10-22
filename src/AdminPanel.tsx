@@ -49,12 +49,13 @@ function Papers({ user, revision, onUpload, onChanged }: { user: Account; revisi
     try {
       const path = action === 'withdraw' ? `/api/private/papers/${paper.id}` : `/api/private/admin/papers/${paper.id}${action === 'restore' ? '/restore' : ''}`;
       await api(path, { method: action === 'restore' ? 'POST' : 'DELETE', headers: { 'X-Margina-User': user.id } });
+      if (action === 'delete') { serial.current++; setRows(old => old.filter(row => row.id !== paper.id)); }
       await load(); onChanged();
     } catch (e) { setError(failure(e)); }
     finally { actionLock.current = false; setBusy(false); }
   }
   return <section>
-    <div className="admin-toolbar"><label className="search cloud-search"><Search size={17} /><input aria-label="搜索文献" placeholder="搜索标题、作者" value={q} onChange={e => setQ(e.target.value)} /></label><select aria-label="文献状态" value={status} onChange={e => setStatus(e.target.value)}><option value="all">全部</option><option value="active">可用</option><option value="withdrawn">已撤下</option><option value="deleted">已删除</option></select><button className="primary-button" onClick={onUpload}><Plus size={17} />上传</button><button className="icon-button" aria-label="刷新文献库" disabled={loading || busy} onClick={() => void load()}><RefreshCw size={17} /></button></div>
+    <div className="admin-toolbar"><label className="search cloud-search"><Search size={17} /><input aria-label="搜索文献" placeholder="搜索标题、作者" value={q} onChange={e => setQ(e.target.value)} /></label><select aria-label="文献状态" value={status} onChange={e => setStatus(e.target.value)}><option value="all">全部</option><option value="active">可用</option><option value="withdrawn">已撤下</option><option value="incomplete">删除未完成</option></select><button className="primary-button" onClick={onUpload}><Plus size={17} />上传</button><button className="icon-button" aria-label="刷新文献库" disabled={loading || busy} onClick={() => void load()}><RefreshCw size={17} /></button></div>
     {error && <p className="cloud-error" role="alert">{error}</p>}
     <div className="admin-paper-list">{rows.map(p => <article className="admin-paper" key={p.id}><div><h2>{p.title}</h2><p>{p.author || p.fileName}</p><small>{p.owner} · {p.pages} 页 · {(p.size / 1024 / 1024).toFixed(1)} MB</small></div><div className="admin-paper-actions"><span>{p.status === 0 && p.visibility === 'private' ? '私密' : statusLabel[p.status]}</span>{p.status === 0 && <button className="secondary-button" disabled={busy || loading} onClick={() => void change(p, 'withdraw')}>撤下</button>}{p.status === 1 && <button className="secondary-button" disabled={busy || loading} onClick={() => void change(p, 'restore')}>恢复</button>}{p.status !== 2 && <button className="secondary-button danger-button" disabled={busy || loading} onClick={() => void change(p, 'delete')}>{p.status === 3 ? '重试删除' : '删除'}</button>}</div></article>)}</div>
     {!rows.length && !error && <p className="admin-empty">{loading ? '正在加载…' : '没有文献'}</p>}

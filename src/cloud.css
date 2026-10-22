@@ -47,3 +47,5 @@
   .cloud-shell .collection-controls > .text-button { flex-shrink: 0; }
   .local-return span { display: none; }
 }
+
+.upload-visibility{border:0;padding:12px 0;margin:0;display:flex;gap:20px;flex-wrap:wrap}.upload-visibility legend{font-size:13px;margin-bottom:10px}.upload-visibility label{display:flex;align-items:center;gap:7px}

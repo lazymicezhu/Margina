@@ -132,3 +132,67 @@ test('storage reservations reject uploads beyond the library budget', async () =
   assert.equal(blocked.status, 413);
   assert.match((await blocked.json()).error, /存储上限/);
 });
+
+test('private TXT is isolated by account and is never exposed through public metadata/files/search', async () => {
+  await (await mf.getD1Database('DB')).prepare("DELETE FROM storage_allocations WHERE object_key = 'budget-test'").run();
+  const content = Buffer.from('第一章\n\n私密文本用于验证权限。\n'.repeat(100));
+  const hash = createHash('sha256').update(content).digest('hex');
+  const send = (cookie, visibility) => mf.dispatchFetch(`http://localhost/api/private/papers/${hash}`, {
+    method: 'PUT', body: content, headers: { Origin: 'http://localhost', Cookie: cookie, 'Content-Type': 'text/plain', 'Content-Length': String(content.length), 'X-Paper-Visibility': visibility,
+      ...(visibility === 'public' ? { 'X-Public-Upload': 'confirmed' } : {}),
+      'X-Paper-Metadata': encodeURIComponent(JSON.stringify({ title: 'Private TXT', author: '', pages: 1, fileName: 'private.txt' })),
+    },
+  });
+  const uploaded = await send(alice, 'private');
+  assert.equal(uploaded.status, 201, await uploaded.clone().text());
+  const paper = (await uploaded.json()).paper;
+  assert.equal(paper.format, 'txt'); assert.equal(paper.visibility, 'private');
+  assert.equal(paper.contentHash, hash); assert.notEqual(paper.id, hash); assert.ok(paper.pages > 1);
+  for (const suffix of ['', '/pdf', '/file', '/bundle']) {
+    assert.equal((await request(`/api/papers/${paper.id}${suffix}`)).status, 404);
+    assert.equal((await request(`/api/papers/${paper.id}${suffix}`, 'HEAD')).status, 404);
+  }
+  assert.equal((await request(`/api/private/files/${paper.id}/file`)).status, 401);
+  assert.equal((await request(`/api/private/files/${paper.id}/file`, 'GET', undefined, bob)).status, 404);
+  assert.equal((await request(`/api/private/files/${paper.id}`, 'GET', undefined, bob)).status, 404);
+  assert.equal((await request(`/api/private/records/${paper.id}`, 'PUT', { version: 0, data: empty() }, bob)).status, 404);
+  assert.equal((await request(`/api/private/papers/${paper.id}`, 'DELETE', undefined, bob)).status, 403);
+  const file = await request(`/api/private/files/${paper.id}/file`, 'GET', undefined, alice);
+  assert.equal(file.status, 200); assert.equal(file.headers.get('content-type'), 'text/plain');
+  assert.equal(await file.text(), content.toString());
+  const noteData = { ...empty(), shelf: true, page: 2, annotations: [{ id: 'txt-note', page: 2, quote: '私密文本', text: '笔记', rects: [], color: 'yellow', language: 'zh', segmentId: 'txt-2-0', created: 1, updated: 1 }] };
+  assert.equal((await request(`/api/private/records/${paper.id}`, 'PUT', { version: 0, data: noteData }, alice)).status, 200);
+  assert.equal((await (await request('/api/catalog?q=Private')).json()).papers.length, 0);
+  const other = (await (await send(bob, 'private')).json()).paper;
+  assert.notEqual(other.id, paper.id);
+  const published = (await (await send(bob, 'public')).json()).paper;
+  assert.equal(published.id, hash); assert.equal(published.visibility, 'public');
+  assert.equal((await request(`/api/papers/${published.id}/file`)).status, 200);
+  assert.equal((await request(`/api/papers/${paper.id}/file`)).status, 404);
+  const uploads = (await (await request('/api/private/uploads', 'GET', undefined, alice)).json()).papers;
+  assert.ok(uploads.some(p => p.id === paper.id)); assert.ok(!uploads.some(p => p.id === other.id));
+});
+
+test('private PDF bundles stay private and validate against file hash, not document id', async () => {
+  const result = await upload(alice, { 'X-Paper-Visibility': 'private', 'X-Public-Upload': '' });
+  assert.equal(result.status, 201, await result.clone().text());
+  const paper = (await result.json()).paper;
+  const bundle = { format: 'yuejian-babeldoc-v1', pdfSha256: id, title: 'Private bilingual', author: 'Test', pageCount: 2, segments: [], glossary: {} };
+  const response = await request(`/api/private/papers/${id}/bundle`, 'PUT', bundle, alice, { 'X-Paper-Visibility': 'private' });
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.equal((await request(`/api/papers/${paper.id}/bundle`)).status, 404);
+  assert.equal((await request(`/api/private/files/${paper.id}/bundle`, 'GET', undefined, bob)).status, 404);
+  assert.equal((await request(`/api/private/files/${paper.id}/bundle`, 'GET', undefined, alice)).status, 200);
+});
+
+test('empty/binary TXT cannot be published, and public TXT still requires consent', async () => {
+  for (const content of [Buffer.from('  \n '), Buffer.from([0, 1, 2])]) {
+    const hash = createHash('sha256').update(content).digest('hex');
+    const response = await mf.dispatchFetch(`http://localhost/api/private/papers/${hash}`, { method: 'PUT', body: content, headers: {
+      Origin: 'http://localhost', Cookie: alice, 'Content-Type': 'text/plain', 'Content-Length': String(content.length), 'X-Paper-Visibility': 'private',
+      'X-Paper-Metadata': encodeURIComponent(JSON.stringify({ title: 'bad txt', author: '', pages: 1, fileName: 'bad.txt' })),
+    } });
+    assert.equal(response.status, 400);
+  }
+  assert.equal((await upload(alice, { 'X-Paper-Visibility': 'public', 'X-Public-Upload': '' })).status, 400);
+});

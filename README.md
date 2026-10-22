@@ -10,10 +10,11 @@ A mobile-first web reader for bilingual academic papers, with highlights, notes,
 
 ## Features
 
-- Browse and read the public library without signing in. Signed-in users can explicitly publish PDFs / matching reading bundles and collect papers on a personal shelf.
+- Browse and read the public library without signing in. Signed-in users can upload PDF / TXT files and matching PDF reading bundles, choosing private (default) or public visibility. Uploaded documents join the personal shelf.
 - Separate each account’s notes, highlights, bookmarks and progress; synchronize changes with version checks, conflict copies, deletion tracking and a persistent local queue. Removing a shelf item preserves notes and the public file.
 - Retain the original local-only library under Settings → Local documents; existing files are never automatically published.
 
+- Read TXT (up to 10 MB, UTF-8 / BOM-marked UTF-16 / GB18030) with adjustable font size, fixed pagination, swipe navigation, excerpts, notes and synced progress. Text is rendered as plain text, never HTML.
 - Import PDFs, deduplicate by SHA-256, search the library, and star papers.
 - Use the PDF.js compatibility build for Safari. Public PDF caches are checked before reading and replaced if unreadable or mismatched, preserving notes and progress; verified bytes go directly to the reader without a second cache read. Unchanged public metadata does not rewrite the PDF cache. Failed reads offer a reload action.
 - Read the Chinese half, English half, or full spread of a bilingual PDF. PDF rendering follows screen pixel density and redraws after pinch zoom, within a bounded bitmap memory budget; low-resolution scans retain their source detail.
@@ -69,7 +70,7 @@ Import the final bilingual PDF to read its original layout. To enable paragraphs
 
 ## Data and privacy
 
-Public uploads are deliberately shared: PDFs and reading bundles are stored in R2 (simulated when running locally), while D1 stores catalog metadata and account reading records. Public endpoints never return personal notes or uploader identities. Publication requires an explicit confirmation; original local files are not uploaded automatically. Uploaded files default to an 8 GB application storage budget, including in-flight uploads and withdrawn files. This is not an account-wide Cloudflare billing cap.
+Public uploads are deliberately shared: PDFs, TXT files and reading bundles are stored in R2 (simulated when running locally), while D1 stores catalog metadata and account reading records. Public endpoints never return personal notes or uploader identities. Private documents use authenticated owner/admin file routes, with separate per-owner IDs and content hashes; identical files can have independent private and public copies. Private caches are excluded from the local-only library. Publication requires an explicit confirmation; original local files are not uploaded automatically. Uploaded files default to an 8 GB application storage budget, including in-flight uploads and withdrawn files. This is not an account-wide Cloudflare billing cap.
 
 IndexedDB `yuejian-library` remains compatible: the `books` store retains local files and guest records, while per-account snapshots and pending edits live in `settings`. Switching accounts separates private records; guest records are merged only through an explicit setting. Clearing site data loses cached files and unsynced edits. Synced account records can be restored from the service. Markdown export is not a complete library backup.
 

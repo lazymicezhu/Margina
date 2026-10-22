@@ -1,13 +1,34 @@
+import { parseTxt, TXT_MAX_BYTES } from '../src/txt.ts';
 import { identity, localAuth, authConfigured, devCookie } from './auth.mjs';
-import { check, readJson, readingData } from './validation.mjs';
+import { check, readJson, readBytes, readingData } from './validation.mjs';
 import { validateBundle } from '../src/bundle.ts';
 import { adminRequest, rememberUser } from './admin.mjs';
 
 const json = (data, status = 200, headers = {}) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers } });
 const publicPaper = p => ({ id: p.id, title: p.title, author: p.author, fileName: p.file_name, size: p.size, pages: p.pages,
-  bilingual: !!p.bilingual, hasBundle: !!p.bundle_key, created: p.created, updated: p.updated, removed: !!p.removed });
+  format: p.pdf_key.endsWith('.txt') ? 'txt' : 'pdf', contentHash: p.content_hash || p.id, visibility: p.visibility, ...(p.visibility === 'private' ? { privateOwner: p.owner } : {}), bilingual: !!p.bilingual, hasBundle: !!p.bundle_key, created: p.created, updated: p.updated, removed: !!p.removed });
 const publicRecord = row => row ? { bookId: row.book_id, version: row.version, seq: row.seq, data: JSON.parse(row.data) } : null;
 const getPaper = (env, id) => env.DB.prepare('SELECT * FROM papers WHERE id = ?').bind(id).first();
+async function privateId(user, hash) {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`private:${user}:${hash}`));
+  return Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('');
+}
+const canRead = (paper, user) => paper && (paper.visibility !== 'private' || paper.owner === user.id || user.admin);
+async function fileResponse(request, env, paper, kind) {
+  const txt = paper.pdf_key.endsWith('.txt');
+  check(kind !== 'pdf' || !txt, '不是 PDF 文件', 404);
+  const key = kind === 'bundle' ? paper.bundle_key : paper.pdf_key;
+  check(key, '此文献尚无阅读包', 404);
+  const object = await env.FILES.get(key);
+  check(object, '文献文件暂时不可用', 404);
+  return new Response(request.method === 'HEAD' ? null : object.body, { headers: {
+    'Content-Type': kind === 'bundle' ? 'application/json; charset=utf-8' : txt ? 'text/plain' : 'application/pdf',
+    'Content-Length': String(object.size), 'Cache-Control': 'private, no-store', 'ETag': object.httpEtag,
+    'X-Content-Type-Options': 'nosniff',
+    ...(kind !== 'bundle' ? { 'Content-Disposition': txt ? 'attachment; filename="book.txt"' : 'inline; filename="paper.pdf"' } : {}),
+  } });
+}
+
 async function reserve(env, key, bytes) {
   const configured = Number(env.MAX_STORAGE_BYTES || 8000000000);
   const maximum = Number.isSafeInteger(configured) && configured > 0 ? configured : 8000000000;
@@ -48,33 +69,30 @@ export default {
       if (path === '/api/catalog' && request.method === 'GET') {
         const query = (url.searchParams.get('q') || '').slice(0, 120);
         const offset = Math.max(0, Math.min(1000000, Number(url.searchParams.get('offset')) || 0));
-        const { results } = await env.DB.prepare(`SELECT * FROM papers WHERE removed = 0 AND
+        const { results } = await env.DB.prepare(`SELECT * FROM papers WHERE removed = 0 AND visibility = 'public' AND
           (instr(lower(title), lower(?)) > 0 OR instr(lower(author), lower(?)) > 0)
           ORDER BY created DESC, id LIMIT 41 OFFSET ?`).bind(query, query, offset).all();
         return json({ papers: results.slice(0, 40).map(publicPaper), more: results.length > 40 });
       }
-      const publicMatch = path.match(/^\/api\/papers\/([a-f0-9]{64})(?:\/(pdf|bundle))?$/);
+      const publicMatch = path.match(/^\/api\/papers\/([a-f0-9]{64})(?:\/(pdf|file|bundle))?$/);
       if (publicMatch && ['GET', 'HEAD'].includes(request.method)) {
         const paper = await getPaper(env, publicMatch[1]);
-        check(paper && !paper.removed, '文献不存在或已撤下', 404);
+        check(paper && !paper.removed && paper.visibility === 'public', '文献不存在或已撤下', 404);
         const kind = publicMatch[2];
         if (!kind) return json(publicPaper(paper));
-        const key = kind === 'pdf' ? paper.pdf_key : paper.bundle_key;
-        check(key, '此文献尚无阅读包', 404);
-        const object = await env.FILES.get(key);
-        check(object, '文献文件暂时不可用', 404);
-        return new Response(request.method === 'HEAD' ? null : object.body, { headers: {
-          'Content-Type': kind === 'pdf' ? 'application/pdf' : 'application/json; charset=utf-8',
-          'Content-Length': String(object.size), 'Cache-Control': 'private, no-cache',
-          'ETag': object.httpEtag, 'X-Content-Type-Options': 'nosniff',
-          ...(kind === 'pdf' ? { 'Content-Disposition': 'inline; filename="paper.pdf"' } : {}),
-        } });
+        return fileResponse(request, env, paper, kind);
       }
       if (!path.startsWith('/api/private/')) return json({ error: '接口不存在' }, 404);
       const user = await identity(request, env);
       check(user, '请先登录，再进行此操作', 401);
       if (request.headers.has('x-margina-user')) check(request.headers.get('x-margina-user') === user.id, '登录账号已变化，请刷新页面', 401);
       await rememberUser(env, user);
+      const privateFile = path.match(/^\/api\/private\/files\/([a-f0-9]{64})(?:\/(file|bundle))?$/);
+      if (privateFile && ['GET', 'HEAD'].includes(request.method)) {
+        const paper = await getPaper(env, privateFile[1]);
+        check(canRead(paper, user) && !paper.removed, '文献不存在或不可访问', 404);
+        return privateFile[2] ? fileResponse(request, env, paper, privateFile[2]) : json(publicPaper(paper));
+      }
       if (path.startsWith('/api/private/admin/')) return await adminRequest(request, env, user, { json, publicPaper, publicRecord, discard });
       if (path === '/api/private/login' && request.method === 'GET') return Response.redirect(`${url.origin}${url.searchParams.get('next') === '/admin' ? '/admin' : '/'}`, 302);
       if (path === '/api/private/uploads' && request.method === 'GET') {
@@ -93,7 +111,7 @@ export default {
         const body = await readJson(request);
         check(Number.isSafeInteger(body.version) && body.version >= 0, '同步版本不正确');
         const paper = await getPaper(env, recordMatch[1]);
-        check(paper, '请先将 PDF 上传到书库，再同步个人记录', 404);
+        check(canRead(paper, user), '文献不存在或不可访问', 404);
         const data = readingData(body.data, paper.pages);
         const row = await env.DB.prepare(`INSERT OR REPLACE INTO reading (user_id, book_id, version, data)
           SELECT ?, ?, ?, ? WHERE COALESCE((SELECT version FROM reading WHERE user_id = ? AND book_id = ?), 0) = ?
@@ -104,7 +122,11 @@ export default {
       }
       const uploadMatch = path.match(/^\/api\/private\/papers\/([a-f0-9]{64})(?:\/(bundle))?$/);
       if (uploadMatch) {
-        const id = uploadMatch[1]; const paper = await getPaper(env, id);
+        const hash = uploadMatch[1];
+        const visibility = request.headers.get('x-paper-visibility') || 'public';
+        check(['public', 'private'].includes(visibility), '可见范围不正确');
+        const id = request.method === 'PUT' && visibility === 'private' ? await privateId(user.id, hash) : hash;
+        const paper = await getPaper(env, id);
         if (request.method === 'DELETE' && !uploadMatch[2]) {
           check(paper && (paper.owner === user.id || user.admin), '只有上传者或管理员可以撤下文献', 403);
           const result = await env.DB.prepare('UPDATE papers SET removed = 1, updated = ? WHERE id = ? AND removed < 2').bind(Date.now(), id).run();
@@ -112,13 +134,13 @@ export default {
           return json({ ok: true });
         }
         if (request.method === 'PUT' && uploadMatch[2]) {
-          check(request.headers.get('x-public-upload') === 'confirmed', '请确认阅读包将公开分享');
-          check(paper && !paper.removed, '请先上传与阅读包匹配的 PDF', 404);
+          check(visibility === 'private' || request.headers.get('x-public-upload') === 'confirmed', '请确认阅读包将公开分享');
+          check(canRead(paper, user) && !paper.removed && !paper.pdf_key.endsWith('.txt'), '请先上传与阅读包匹配的 PDF', 404);
           check(paper.owner === user.id || user.admin, '只有上传者或管理员可以更新阅读包', 403);
           const raw = await readJson(request, 20 * 1024 * 1024);
           let bundle;
           try { bundle = validateBundle(raw); } catch { check(false, '阅读包格式不正确'); }
-          check(bundle.pdfSha256 === id && bundle.pageCount === paper.pages, '阅读包与 PDF 不匹配');
+          check(bundle.pdfSha256 === (paper.content_hash || paper.id) && bundle.pageCount === paper.pages, '阅读包与 PDF 不匹配');
           const key = `bundles/${id}/${crypto.randomUUID()}.json`;
           const encoded = JSON.stringify(bundle);
           await reserve(env, key, new TextEncoder().encode(encoded).byteLength);
@@ -132,29 +154,40 @@ export default {
           return json({ paper: publicPaper(await getPaper(env, id)) });
         }
         if (request.method === 'PUT' && !uploadMatch[2]) {
-          check(request.headers.get('x-public-upload') === 'confirmed', '请确认文件将公开分享');
+          check(visibility === 'private' || request.headers.get('x-public-upload') === 'confirmed', '请确认文件将公开分享');
           if (paper) {
-            check(!paper.removed, '该文献已撤下，请联系管理员', 409);
+            check(canRead(paper, user) && !paper.removed, '该文献不可用，请联系管理员', 409);
             return json({ paper: publicPaper(paper), duplicate: true });
           }
           const size = Number(request.headers.get('content-length'));
-          check(size > 0 && size <= 100 * 1024 * 1024, 'PDF 须小于 100 MB，并提供文件长度', 413);
-          check(request.headers.get('content-type') === 'application/pdf', '请选择 PDF 文件', 415);
+          const mime = request.headers.get('content-type')?.split(';')[0];
+          const txt = mime === 'text/plain';
+          check(txt || mime === 'application/pdf', '请选择 PDF 或 TXT 文件', 415);
+          check(size > 0 && size <= (txt ? TXT_MAX_BYTES : 100 * 1024 * 1024), txt ? 'TXT 须小于 10 MB' : 'PDF 须小于 100 MB，并提供文件长度', 413);
           let meta;
           try { meta = JSON.parse(decodeURIComponent(request.headers.get('x-paper-metadata') || '')); } catch { check(false, '文献信息不正确'); }
           check(meta && typeof meta.title === 'string' && meta.title.trim() && meta.title.length <= 500 && typeof meta.author === 'string' && meta.author.length <= 300 && typeof meta.fileName === 'string' && meta.fileName.length <= 255 && Number.isInteger(meta.pages) && meta.pages > 0 && meta.pages <= 20000, '文献信息不正确');
-          const key = `papers/${id}/${crypto.randomUUID()}.pdf`;
+          let uploadBody = request.body;
+          if (txt) {
+            const bytes = await readBytes(request, TXT_MAX_BYTES);
+            check(bytes.byteLength === size && bytes.byteLength <= TXT_MAX_BYTES, 'TXT 大小不正确', 413);
+            try { meta.pages = parseTxt(bytes).length; } catch (error) { check(false, error.message); }
+            meta.bilingual = false; uploadBody = bytes;
+          }
+          const key = `papers/${id}/${crypto.randomUUID()}.${txt ? 'txt' : 'pdf'}`;
           await reserve(env, key, size);
           try {
             // R2 verifies the browser-computed SHA-256 while streaming. Do not
             // load a 100 MB PDF into the Worker's 128 MB heap.
-            await env.FILES.put(key, request.body, { sha256: id, httpMetadata: { contentType: 'application/pdf' } });
-            const head = await env.FILES.get(key, { range: { offset: 0, length: 1024 } });
-            check(head && (await head.text()).includes('%PDF-'), '不是有效的 PDF 文件');
+            await env.FILES.put(key, uploadBody, { sha256: hash, httpMetadata: { contentType: mime } });
+            if (!txt) {
+              const head = await env.FILES.get(key, { range: { offset: 0, length: 1024 } });
+              check(head && (await head.text()).includes('%PDF-'), '不是有效的 PDF 文件');
+            }
             const now = Date.now();
             const result = await env.DB.prepare(`INSERT OR IGNORE INTO papers
-              (id, title, author, file_name, size, pages, bilingual, pdf_key, owner, created, updated)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, meta.title.trim(), meta.author, meta.fileName, size, meta.pages, meta.bilingual ? 1 : 0, key, user.id, now, now).run();
+              (id, title, author, file_name, size, pages, bilingual, pdf_key, owner, created, updated, content_hash, visibility)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, meta.title.trim(), meta.author, meta.fileName, size, meta.pages, meta.bilingual ? 1 : 0, key, user.id, now, now, hash, visibility).run();
             if (!result.meta.changes) await discard(env, key);
           } catch (error) { await discard(env, key); throw error; }
           return json({ paper: publicPaper(await getPaper(env, id)) }, 201);

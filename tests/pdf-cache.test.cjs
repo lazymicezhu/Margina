@@ -94,7 +94,7 @@ test('broken cache downloads once, preserves notes/progress/cover, and next open
 
 test('wrong downloaded bytes never replace an existing record', async () => {
   const s = await setup({ broken: true, badDownload: true });
-  await assert.rejects(s.cachePaper(s.paper), /PDF 校验失败/);
+  await assert.rejects(s.cachePaper(s.paper), /文件校验失败/);
   assert.equal(s.counts().writes, 0);
 });
 

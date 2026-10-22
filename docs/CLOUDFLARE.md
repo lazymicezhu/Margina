@@ -1,6 +1,6 @@
 # Cloudflare 部署与管理后台
 
-使用 Workers 托管网页和接口、D1 保存账号与笔记、R2 保存 PDF / JSON。无需先运行本地预览，也不需要推送 GitHub。当前公共网站为 https://margina.lazymicezhu.com，Worker、D1 和私有 R2 已部署。Zero Trust Free 与邮箱验证码登录已启用；登录有效期为 24 小时，仅保护 `/api/private/*`。当前允许登录的邮箱为已配置的管理员邮箱，新增账号需加入 Access Allow 策略。
+使用 Workers 托管网页和接口、D1 保存账号与笔记、R2 保存 PDF / TXT / JSON。无需先运行本地预览，也不需要推送 GitHub。当前公共网站为 https://margina.lazymicezhu.com，Worker、D1 和私有 R2 已部署。Zero Trust Free 与邮箱验证码登录已启用；登录有效期为 24 小时，仅保护 `/api/private/*`。当前允许登录的邮箱为已配置的管理员邮箱，新增账号需加入 Access Allow 策略。
 
 ## 1. 准备 Cloudflare
 
@@ -65,7 +65,7 @@ npm run deploy:cloud
 
 ## 管理后台
 
-- **文献库**：搜索全部文献、上传 PDF / JSON、撤下、恢复、删除。
+- **文献库**：搜索全部文献、上传 PDF / TXT / JSON、撤下、恢复、删除。
 - **账号笔记**：按邮箱搜索账号，打开账号查看各篇文献的笔记、高亮、页码和书签数量。
 - **撤下**：隐藏公开目录和下载，文件保留，可恢复。
 - **删除**：删除云端 PDF / JSON 并释放应用存储预算，保留文献信息与账号笔记。中断时显示「重试删除」。已删除文献不可恢复，也不能以同一 PDF 哈希重新上传。
@@ -83,15 +83,15 @@ npm run deploy:cloud
 
 ## 存储与免费额度
 
-应用默认文件预算为 **8,000,000,000 bytes**，可通过 `MAX_STORAGE_BYTES` 调整；PDF 和阅读包都计算在内。PDF 上限 100 MB，JSON 上限 20 MB。R2 的 10 GB-month 是免费用量，不是桶的容量上限；超过免费存储或操作额度会计费。应用预算不是 Cloudflare 全账号的账单硬上限。
+应用默认文件预算为 **8,000,000,000 bytes**，可通过 `MAX_STORAGE_BYTES` 调整；PDF 和阅读包都计算在内。PDF 上限 100 MB，TXT 上限 10 MB，JSON 上限 20 MB。R2 的 10 GB-month 是免费用量，不是桶的容量上限；超过免费存储或操作额度会计费。应用预算不是 Cloudflare 全账号的账单硬上限。
 
 公开阅读仍会消耗 Worker 请求和 R2 读取操作；同一浏览器下载后的 PDF 可复用本地缓存。Access 免费方案最多 50 个用户，适合小规模登录群体，游客不占登录账号。具体额度以 [R2 定价](https://developers.cloudflare.com/r2/pricing/)、[Workers 定价](https://developers.cloudflare.com/workers/platform/pricing/) 和 [Zero Trust 计划](https://www.cloudflare.com/plans/zero-trust-services/) 为准。
 
 ## 数据与同步实现
 
-- D1 的 `papers` 保存公开元数据、R2 引用及状态；`users` 保存登录账号和邮箱；`reading` 保存按账号隔离的版本化快照；`storage_allocations` 原子预留上传空间。
-- `papers.removed`：0 公开、1 撤下、2 文件已删除、3 删除中/待重试。删除前先进入状态 3，阻止并发恢复和阅读包替换；R2 删除完成后释放对应预留空间，再进入状态 2。个人阅读快照不删除。
-- R2 保持私有，通过公开 Worker 接口提供文件。Worker 检查文献状态，不公开对象名称或账号笔记。
+- D1 的 `papers` 保存文献元数据、可见范围、R2 引用及状态；`users` 保存登录账号和邮箱；`reading` 保存按账号隔离的版本化快照；`storage_allocations` 原子预留上传空间。
+- `papers.removed`：0 可用（可公开或私密）、1 撤下、2 文件已删除、3 删除中/待重试。删除前先进入状态 3，阻止并发恢复和阅读包替换；R2 删除完成后释放对应预留空间，再进入状态 2。个人阅读快照不删除。
+- R2 保持私有，公开文件通过公开 Worker 接口提供，私密文件通过 `/api/private/files/*` 校验上传者或管理员后提供。Worker 检查可见范围与文献状态，不公开对象名称或账号笔记。
 - Access JWT 验证签名、签发者、受众和有效期；所有写操作要求同源 Origin。后台接口额外检查管理员身份。缺失或无效身份不能访问私有接口。
 - 保留 IndexedDB `yuejian-library` v1：`books` 存文件与游客记录，`settings` 按账号存快照、同步基线和待提交修改。阅读包仍使用 `yuejian-babeldoc-v1`。
 - 编辑先写本机，1.8 秒合并发送；启动、回到前台、恢复网络及手动操作触发同步，失败保留队列并有限退避重试。
@@ -114,3 +114,16 @@ npm run dev:cloud
 此前本地检查覆盖公共书库、上传、账号同步、冲突、离线恢复，以及 320 / 390 / 768 像素宽度。此次按要求不启动本地功能测试，仅执行构建和线上检查。已确认主页及公共目录返回 200、登录入口启用、私有接口跳转邮箱验证码登录页；已在自定义域名通过现有登录会话进入管理后台并加载文献列表。上传、删除、账号笔记等后台交互、真实移动设备、100 MB 上传和免费计划 CPU / 负载仍待验证。
 
 目前不提供离线启动缓存、全文检索或完整可恢复备份。上传失败或进程中断可能留下孤立文件与保守预留空间，仍需运维清理；后台删除处理有文献记录的对象，不扫描整个桶。
+
+## TXT 与私密上传迁移
+
+已有部署升级前执行一次（新数据库直接使用 schema.sql，无需重复执行）：
+
+```sh
+node node_modules/wrangler/bin/wrangler.js d1 execute margina --remote --file server/migrations/0001-private-text.sql --config wrangler.production.jsonc
+npm run deploy:cloud
+```
+
+该迁移只新增 content_hash 和 visibility 两列，既有文献保持公开，不改动文件、笔记或进度。可先用 `PRAGMA table_info(papers)` 检查是否已执行，避免重复添加列。新增私密文件后，不要回退到没有可见范围校验的旧 Worker。
+
+上传默认私密，公开上传需明确勾选确认。PDF/TXT 上传后自动进入个人书架；配套 JSON 选择与 PDF 相同的可见范围。同一文件可分别公开或在各账号私密保存，互不转换或混用阅读记录；独立副本分别计入存储预算。私密文件仍纳入既有管理员管理权限。

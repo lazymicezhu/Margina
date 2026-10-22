@@ -9,7 +9,7 @@ export async function readCachedPdf(book: Book): Promise<ArrayBuffer | null> {
   try {
     if (!(book.blob instanceof Blob) || book.blob.size !== book.size) return null;
     const bytes = await book.blob.arrayBuffer();
-    return await sha256(bytes) === book.id ? bytes : null;
+    return await sha256(bytes) === (book.contentHash || book.id) ? bytes : null;
   } catch (error) {
     console.warn('PDF cache read failed', error);
     return null;

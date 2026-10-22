@@ -9,6 +9,7 @@ import { editReading, readAccount, syncAccount } from './sync';
 import { mergeReading } from './sync-merge';
 import { getBook, listBooks, notesMarkdown, patchBook, saveFile, setting } from './storage';
 import { makeBook } from './pdf';
+import { makeTxtBook } from './txt-book';
 import Reader from './Reader';
 import AdminPanel from './AdminPanel';
 import LocalLibrary, { Logo } from './LocalLibrary';
@@ -19,7 +20,7 @@ type View = 'catalog' | 'shelf' | 'notes' | 'uploads';
 const sizeLabel = (size: number) => `${(size / 1024 / 1024).toFixed(1)} MB`;
 const problem = (error: unknown) => error instanceof Error ? error.message : '操作失败，请重试';
 const freshAccount = (): AccountState => ({ cursor: 0, records: {}, lastSynced: 0 });
-const paperFromBook = (b: Book): Paper => ({ id: b.id, title: b.title, author: b.author, fileName: b.fileName, size: b.size, pages: b.pages, bilingual: b.bilingual, hasBundle: !!b.bundle, created: b.added, updated: b.added, removed: false });
+const paperFromBook = (b: Book): Paper => ({ id: b.id, format: b.format, contentHash: b.contentHash, visibility: b.privateOwner ? 'private' : 'public', privateOwner: b.privateOwner, title: b.title, author: b.author, fileName: b.fileName, size: b.size, pages: b.pages, bilingual: b.bilingual, hasBundle: !!b.bundle, created: b.added, updated: b.added, removed: false });
 
 export default function App() {
   const [localLibrary, setLocalLibrary] = useState(false);
@@ -46,6 +47,7 @@ export default function App() {
   const [upload, setUpload] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [publicConsent, setPublicConsent] = useState(false);
+  const [uploadVisibility, setUploadVisibility] = useState<'private' | 'public'>('private');
   const [active, setActive] = useState<Book | null>(null);
   const [pdfSource, setPdfSource] = useState<PdfSource>();
   const [withdraw, setWithdraw] = useState<Paper | null>(null);
@@ -103,7 +105,7 @@ export default function App() {
   }
   useEffect(() => { void refreshSession(); void listBooks().then(setCached).catch(error => notify(problem(error))); }, []);
   useEffect(() => {
-    setActive(null); setPdfSource(undefined); setAccount(freshAccount()); setSyncError(''); setSyncing(false); setPaused(false);
+    setActive(null); setPdfSource(undefined); setKnown(old => Object.fromEntries(Object.entries(old).filter(([, paper]) => paper.visibility !== 'private'))); setAccount(freshAccount()); setSyncError(''); setSyncing(false); setPaused(false);
     if (!accountId) return;
     let cancelled = false;
     void setting(`sync-paused:${accountId}`).then(value => { if (!cancelled) { setPaused(value === true); if (value !== true) void syncNow(accountId); } });
@@ -168,13 +170,14 @@ export default function App() {
   async function openPaper(paper: Paper) {
     await run('正在打开文献…', async () => {
       const id = userRef.current?.id;
+      if (paper.visibility === 'private' && (paper.privateOwner !== id && !userRef.current?.admin)) throw new Error('请登录上传此文件的账号');
       let book: Book;
       let source: PdfSource;
       try { ({ book, source } = await cachePaper(paper)); }
       catch (error) {
         const local = await getBook(paper.id);
         const bytes = local && await readCachedPdf(local);
-        if (!local || !bytes) throw error;
+        if (!local || !bytes || (local.privateOwner && local.privateOwner !== id && !userRef.current?.admin)) throw error;
         book = local; source = { bytes };
         notify('正在阅读本机缓存，未能获取最新阅读包。');
       }
@@ -197,7 +200,7 @@ export default function App() {
     const activeBook = activeRef.current;
     if (!activeBook) return;
     const userId = userRef.current?.id;
-    await run('正在重新加载 PDF…', async () => {
+    await run('正在重新加载…', async () => {
       const { book, source } = await cachePaper(await getPaper(activeBook.id), true);
       if (userRef.current?.id !== userId || activeRef.current?.id !== activeBook.id) return;
       setPdfSource(source);
@@ -229,19 +232,20 @@ export default function App() {
   async function doUpload() {
     const user = userRef.current;
     if (!user) { setLogin(true); return; }
-    if (!publicConsent || !files.length) return;
+    if ((uploadVisibility === 'public' && !publicConsent) || !files.length) return;
     await run('正在上传到书库…', async () => {
       const failures: string[] = []; let count = 0;
-      for (const file of [...files.filter(f => /\.pdf$/i.test(f.name)), ...files.filter(f => /\.json$/i.test(f.name))]) {
+      for (const file of [...files.filter(f => /\.(pdf|txt)$/i.test(f.name)), ...files.filter(f => /\.json$/i.test(f.name))]) {
         setBusy(`正在上传 ${file.name}…`);
         try {
-          if (/\.pdf$/i.test(file.name)) {
+          if (/\.(pdf|txt)$/i.test(file.name)) {
             if (file.size > 100 * 1024 * 1024) throw new Error('PDF 不能超过 100 MB');
-            const book = await makeBook(file, file.name);
-            const result = await uploadPdf(book, user.id);
+            const book = await (/\.txt$/i.test(file.name) ? makeTxtBook : makeBook)(file, file.name);
+            const result = await uploadPdf(book, user.id, uploadVisibility);
             setKnown(old => ({ ...old, [result.paper.id]: result.paper }));
+            await editReading(user.id, result.paper.id, { shelf: true });
           } else {
-            const result = await uploadBundle(file, user.id);
+            const result = await uploadBundle(file, user.id, uploadVisibility);
             setKnown(old => ({ ...old, [result.paper.id]: result.paper }));
           }
           count++;
@@ -249,8 +253,8 @@ export default function App() {
       }
       if (count) setAdminRevision(old => old + 1);
       if (!failures.length) { setUpload(false); setFiles([]); setPublicConsent(false); }
-      notify([count ? `已处理 ${count} 个文件，可在书库中加入书架` : '', ...failures].filter(Boolean).join('；'));
-      if (view === 'uploads') await refreshUploads(); else { setView('catalog'); await refreshCatalog(); }
+      notify([count ? `已处理 ${count} 个文件` : '', ...failures].filter(Boolean).join('；'));
+      if (view === 'uploads') await refreshUploads(); else if (uploadVisibility === 'private') setView('shelf'); else { setView('catalog'); await refreshCatalog(); }
     });
   }
   async function localLogin(name: string) {
@@ -268,7 +272,7 @@ export default function App() {
     const user = userRef.current; if (!user) return;
     await run('正在合并本机阅读记录…', async () => {
       let count = 0;
-      for (const book of await listBooks()) {
+      for (const book of (await listBooks()).filter(b => !b.privateOwner)) {
         if (!book.opened && !book.annotations.length && !book.bookmarks.length) continue;
         try { await getPaper(book.id); } catch { continue; }
         const state = await readAccount(user.id);
@@ -301,7 +305,7 @@ export default function App() {
         <main className="library-main">
           <header className="library-top"><div className="mobile-brand"><Logo small /></div><button className="local-pill" onClick={() => current.user ? setSettings(true) : setLogin(true)}>{current.user ? <><Cloud size={14} />{current.local ? '本地测试账号' : '已登录'}{dirty > 0 && ` · ${dirty} 待同步`}</> : <><User size={14} />登录</>}<ChevronRight size={13} /></button></header>
           <div className="library-content">
-            <section className="intro"><div><h1>{titles[view]}</h1><p>{view === 'catalog' ? '自由浏览与阅读，把喜欢的文献加入自己的书架。' : view === 'shelf' ? '你的收藏与阅读进度，登录后可在不同设备间同步。' : view === 'notes' ? '' : '你分享的文献，供所有人浏览和阅读。'}</p></div><button className="primary-button import-button" disabled={!!busy} onClick={() => current.user ? setUpload(true) : setLogin(true)}><Plus size={18} />上传</button></section>
+            <section className="intro"><div><h1>{titles[view]}</h1><p>{view === 'catalog' ? '自由浏览与阅读，把喜欢的文献加入自己的书架。' : view === 'shelf' ? '你的收藏与阅读进度，登录后可在不同设备间同步。' : view === 'notes' ? '' : '管理你上传的公开与私密文献。'}</p></div><button className="primary-button import-button" disabled={!!busy} onClick={() => current.user ? setUpload(true) : setLogin(true)}><Plus size={18} />上传</button></section>
             {current.local && <div className="cloud-notice"><span className="status-dot" /><span>本地预览 · 文件与测试账号仅在这台电脑的预览服务中保存</span></div>}
             {current.user && (dirty > 0 || syncError) && <div className="cloud-notice" role="status"><span>{syncError || `${dirty} 篇文献有待同步的个人记录${paused ? '，自动同步已暂停' : ''}`}</span><button className="text-button" disabled={syncing} onClick={() => void syncNow()}><RefreshCw size={14} className={syncing ? 'spin' : ''} />{syncing ? '同步中' : '重试同步'}</button></div>}
             {privateView ? <div className="empty-state"><BookOpen size={32} /><h3>登录后拥有自己的书架</h3><p>公开书库无需登录即可阅读。收藏、上传和跨设备同步需要登录。</p><button className="primary-button" onClick={() => setLogin(true)}>登录</button></div> : <>
@@ -311,7 +315,7 @@ export default function App() {
                 <div className="book-grid">{visible.map(paper => {
                   const data = personalData(paper.id); const cache = cached.find(b => b.id === paper.id);
                   return <article className="book-card" key={paper.id}>
-                    <button className="book-cover public-cover" aria-label={`阅读 ${paper.title}`} disabled={!!busy || (paper.removed && !cache)} onClick={() => void openPaper(paper)}><div className="cover-top"><span>{paper.removed ? '已撤下' : paper.bilingual ? '中英对照' : 'PDF 文献'}</span></div>{cache ? <div className="paper-thumbnail"><img src={cache.cover} alt="" /></div> : <div className="typographic-cover"><BookOpen size={28} strokeWidth={1.2} /><strong>{paper.title}</strong><span>{paper.author || 'Margina 书库'}</span></div>}<div className="cover-bottom"><span>{paper.hasBundle ? 'PDF + 段落阅读' : '原版 PDF'}</span><span>{paper.pages} 页</span></div></button>
+                    <button className="book-cover public-cover" aria-label={`阅读 ${paper.title}`} disabled={!!busy || (paper.removed && !cache)} onClick={() => void openPaper(paper)}><div className="cover-top"><span>{paper.removed ? '已撤下' : paper.visibility === 'private' ? '私密' : paper.format === 'txt' ? 'TXT 文本' : paper.bilingual ? '中英对照' : 'PDF 文献'}</span></div>{cache ? <div className="paper-thumbnail"><img src={cache.cover} alt="" /></div> : <div className="typographic-cover"><BookOpen size={28} strokeWidth={1.2} /><strong>{paper.title}</strong><span>{paper.author || 'Margina 书库'}</span></div>}<div className="cover-bottom"><span>{paper.format === 'txt' ? 'TXT 阅读' : paper.hasBundle ? 'PDF + 段落阅读' : '原版 PDF'}</span><span>{paper.pages} 页</span></div></button>
                     <div className="book-info"><button className="book-title" onClick={() => void openPaper(paper)} disabled={!!busy || (paper.removed && !cache)}>{paper.title}</button><p className="book-author">{paper.author || paper.fileName}</p><div className="book-meta"><span>{sizeLabel(paper.size)}</span><span>{data.opened ? `读至第 ${data.page} 页` : '尚未阅读'}</span></div><div className="public-card-actions"><button className={`secondary-button ${data.shelf ? 'on-shelf' : ''}`} disabled={!!busy || (paper.removed && !data.shelf)} onClick={() => data.shelf ? setRemoveShelf(paper) : void addToShelf(paper)}>{data.shelf ? <Check size={15} /> : <Plus size={15} />}{data.shelf ? '已加入书架' : '加入书架'}</button>{view === 'uploads' && !paper.removed && <button className="icon-button" aria-label={`撤下 ${paper.title}`} onClick={() => setWithdraw(paper)}><Trash2 size={16} /></button>}</div>{data.opened > 0 && <div className="progress-track"><div style={{ width: `${data.page / paper.pages * 100}%` }} /></div>}</div>
                   </article>;
                 })}</div>
@@ -327,10 +331,10 @@ export default function App() {
     {message && <div className="toast" role="status"><span>{message}</span><button aria-label="关闭提示" onClick={() => setMessage('')}><X size={16} /></button></div>}
     {busy && <div className="busy-toast" role="status"><LoaderCircle size={17} className="spin" />{busy}</div>}
     {login && <Modal title="登录 Margina" close={() => setLogin(false)}><p>登录后可上传文献、收藏到书架，并同步自己的阅读记录。书库始终可以直接阅读。</p>{current.local ? <><div className="cloud-notice">本地测试身份，不是真实云端账号。</div><button className="wide-button" disabled={!!busy} onClick={() => void localLogin('alice')}><User size={17} />使用测试账号 A</button><button className="wide-button" disabled={!!busy} onClick={() => void localLogin('bob')}><User size={17} />使用测试账号 B</button></> : current.loginAvailable ? <a className="wide-button primary-button" href={adminOpen ? '/api/private/login?next=/admin' : '/api/private/login'}><LogIn size={17} />通过邮箱登录</a> : <p>账号服务尚未配置。请启动本地书库预览服务，或在部署时配置 Cloudflare Access。</p>}</Modal>}
-    {upload && <Modal title="上传到公共书库" close={() => !busy && setUpload(false)}><p>先上传 PDF，可同时或稍后补充匹配的 JSON 阅读包。文件上传后任何人都可以阅读与获取。</p><label className="upload-picker">选择 PDF / JSON 文件<input type="file" accept=".pdf,.json" multiple disabled={!!busy} onChange={event => { setFiles(Array.from(event.target.files || [])); setPublicConsent(false); }} /></label><ul className="upload-file-list">{files.map((file, index) => <li key={index}><span>{file.name}</span><small>{sizeLabel(file.size)}</small></li>)}</ul><p className="fineprint">PDF ≤ 100 MB · JSON ≤ 20 MB。阅读包必须与 PDF 匹配；最终 PDF 为准。</p><label className="consent"><input type="checkbox" checked={publicConsent} disabled={!!busy} onChange={event => setPublicConsent(event.target.checked)} /><span>我确认有权公开分享这些文件，并了解它们将进入公共书库。</span></label><button className="wide-button primary-button" disabled={!files.length || !publicConsent || !!busy} onClick={() => void doUpload()}><Upload size={17} />{busy ? '正在处理…' : '公开上传'}</button></Modal>}
+    {upload && <Modal title="上传文献" close={() => !busy && setUpload(false)}><label className="upload-picker">选择 PDF / TXT / JSON 文件<input type="file" accept=".pdf,.txt,.json" multiple disabled={!!busy} onChange={event => { setFiles(Array.from(event.target.files || []).filter(file => /\.(pdf|txt|json)$/i.test(file.name))); setPublicConsent(false); }} /></label><ul className="upload-file-list">{files.map((file, index) => <li key={index}><span>{file.name}</span><small>{sizeLabel(file.size)}</small></li>)}</ul><fieldset className="upload-visibility" disabled={!!busy}><legend>可见范围</legend><label><input type="radio" name="visibility" checked={uploadVisibility === 'private'} onChange={() => { setUploadVisibility('private'); setPublicConsent(false); }} />仅自己可见</label><label><input type="radio" name="visibility" checked={uploadVisibility === 'public'} onChange={() => setUploadVisibility('public')} />公开到书库</label></fieldset><p className="fineprint">PDF ≤ 100 MB · TXT ≤ 10 MB · JSON ≤ 20 MB</p>{uploadVisibility === 'public' && <label className="consent"><input type="checkbox" checked={publicConsent} disabled={!!busy} onChange={event => setPublicConsent(event.target.checked)} /><span>我确认有权公开分享这些文件。</span></label>}<button className="wide-button primary-button" disabled={!files.length || (uploadVisibility === 'public' && !publicConsent) || !!busy} onClick={() => void doUpload()}><Upload size={17} />{busy ? '正在处理…' : uploadVisibility === 'private' ? '私密上传' : '公开上传'}</button></Modal>}
     {settings && <Modal title="设置与账号" close={() => setSettings(false)}><div className="storage-row"><span>当前身份</span><strong>{current.user?.email || '游客'}</strong></div><div className="storage-row"><span>同步服务</span><strong>{connected ? current.local ? '本地测试服务' : '已连接' : '未连接'}</strong></div>{current.user ? <><div className="storage-row"><span>最近成功同步</span><strong>{account.lastSynced ? new Date(account.lastSynced).toLocaleString('zh-CN') : '尚未同步'}</strong></div><p>{syncError || (dirty ? `${dirty} 篇文献的修改待同步，已保存在本机。` : '')}</p><button className="wide-button" disabled={syncing} onClick={() => void syncNow()}><RefreshCw size={17} className={syncing ? 'spin' : ''} />立即同步</button><label className="consent"><input type="checkbox" checked={paused} onChange={event => { const next = event.target.checked; setPaused(next); void setting(`sync-paused:${accountId}`, next); if (!next) void syncNow(); }} />暂停自动同步</label>{current.user.admin && <button className="wide-button" onClick={() => { setSettings(false); setAdminOpen(true); history.replaceState(null, '', '/admin'); }}>管理后台</button>}<button className="wide-button" onClick={() => { setSettings(false); navigate('uploads'); }}><Upload size={17} />管理我的上传</button><button className="wide-button" disabled={!!busy} onClick={() => void mergeGuest()}>合并此浏览器的游客阅读记录</button><p className="fineprint">只合并公共书库中已有文献的记录。本机 PDF 不会因此上传。</p><button className="wide-button" disabled={!!busy || syncing} onClick={() => void run('正在退出…', logout)}>退出登录</button>{current.local && <button className="text-button" onClick={() => { setSettings(false); setLogin(true); }}>切换测试账号</button>}</> : <button className="wide-button" onClick={() => { setSettings(false); setLogin(true); }}><LogIn size={17} />登录</button>}<button className="wide-button" onClick={() => { setSettings(false); setLocalLibrary(true); }}><FolderOpen size={17} />本机文献与导入</button><p className="fineprint">本机空间保留原有文献与笔记。清理网站数据会删除本机缓存及尚未同步的记录。</p></Modal>}
     {removeShelf && <Modal title="从我的书架移除？" close={() => setRemoveShelf(null)}><p>「{removeShelf.title}」的个人笔记和进度会保留，公共书库中的文件不受影响。</p><button className="wide-button" onClick={() => void run('正在移出书架…', async () => { if (accountId) await editReading(accountId, removeShelf.id, { shelf: false }); setRemoveShelf(null); })}>移出书架</button></Modal>}
-    {withdraw && <Modal title="从公共书库撤下？" close={() => setWithdraw(null)}><p>「{withdraw.title}」将停止公开浏览与下载。其他人已下载的副本无法收回；个人笔记仍保留。</p><button className="wide-button danger-button" disabled={!!busy} onClick={() => void run('正在撤下文献…', async () => { await api(`/api/private/papers/${withdraw.id}`, { method: 'DELETE', headers: { 'X-Margina-User': accountId || '' } }); setWithdraw(null); await refreshUploads(); })}>确认撤下</button></Modal>}
+    {withdraw && <Modal title={withdraw.visibility === 'private' ? '撤下这份私密文献？' : '从公共书库撤下？'} close={() => setWithdraw(null)}><p>「{withdraw.title}」将停止浏览与下载，个人笔记仍保留。</p><button className="wide-button danger-button" disabled={!!busy} onClick={() => void run('正在撤下文献…', async () => { await api(`/api/private/papers/${withdraw.id}`, { method: 'DELETE', headers: { 'X-Margina-User': accountId || '' } }); setWithdraw(null); await refreshUploads(); })}>确认撤下</button></Modal>}
   </>;
 }
 function Empty({ text }: { text: string }) { return <div className="empty-state"><BookOpen size={32} /><h3>{text}</h3></div>; }

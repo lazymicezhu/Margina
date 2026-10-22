@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS papers (
   pages INTEGER NOT NULL,
   bilingual INTEGER NOT NULL DEFAULT 0,
   pdf_key TEXT NOT NULL,
+  content_hash TEXT,
+  visibility TEXT NOT NULL DEFAULT 'public',
   bundle_key TEXT,
   owner TEXT NOT NULL,
   created INTEGER NOT NULL,

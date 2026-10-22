@@ -523,3 +523,5 @@ h1,h2,h3,p{margin:0}
 @media(max-width:960px){.reader-panel{visibility:hidden}
 .reader-panel.is-open{visibility:visible}
 }
+
+.txt-document .segment p{white-space:pre-wrap;overflow-wrap:anywhere}.txt-document .first-segment .segment-zh p::first-letter{float:none;font:inherit;margin:0}.txt-document .segment{margin-bottom:1.2em}

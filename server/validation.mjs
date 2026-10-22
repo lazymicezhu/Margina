@@ -41,3 +41,19 @@ export function readingData(data, pages) {
       color: n.color, created: n.created, updated: n.updated, language: n.language, ...(n.segmentId ? { segmentId: n.segmentId } : {}),
     })) };
 }
+
+export async function readBytes(request, limit) {
+  const reader = request.body?.getReader();
+  check(reader, '缺少文件');
+  const chunks = []; let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) { await reader.cancel(); check(false, '文件超过大小限制', 413); }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size); let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return bytes.buffer;
+}

@@ -1,0 +1,23 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+.env*
+.wrangler/
+artifacts/
+public/samples/
+public/pdf-assets/
+scripts/__pycache__/
+
+# Local research data and credentials
+*.pdf
+*.yuejian.json
+*.margina.json
+*.pem
+*.key
+*.log
+.venv*/
+__pycache__/
+*.py[cod]
+.codex/
+.agents/

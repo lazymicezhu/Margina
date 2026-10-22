@@ -1,0 +1,35 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Check repository data boundary
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          files = subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')
+          forbidden = [p for p in files if p and (
+              p.startswith(('public/samples/', 'artifacts/', 'dist/', 'node_modules/'))
+              or p.lower().endswith(('.pdf', '.yuejian.json', '.margina.json', '.pem', '.key'))
+          )]
+          if forbidden:
+              raise SystemExit('Private or generated files must not be tracked: ' + ', '.join(forbidden))
+          PY
+      - run: npm ci
+      - run: npm run build

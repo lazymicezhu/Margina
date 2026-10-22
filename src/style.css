@@ -199,15 +199,12 @@ h1,h2,h3,p{margin:0}
 .flow-notice{display:flex;align-items:center;gap:6px;background:var(--surface);color:var(--muted);font-size:9px;padding:10px;border-radius:4px;margin:17px 0 24px}
 .flow-notice>button{display:flex;align-items:center;gap:3px;margin-left:auto;color:var(--muted);font-size:9px;white-space:nowrap;padding:0}
 .segment{position:relative;border-radius:3px;padding-left:9px;margin-left:-11px}
+.flow-document:not(.txt-document) .segment + .segment{margin-top:1em}
 .segment.has-note{background:var(--quote)}
 .segment p{font-family:"Songti SC","STSong","Noto Serif CJK SC",serif;font-size:var(--reading-size,18px);line-height:1.95;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
 .segment-en p{font-family:Georgia,"Times New Roman",serif;line-height:1.85;color:var(--green)}
 .first-segment p{font-size:calc(var(--reading-size,18px) + 6px);line-height:1.65;font-weight:calc(600 - var(--weight-offset));color:var(--ink);letter-spacing:.2px;margin-bottom:8px}
 .segment-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;min-height:29px;margin:4px 0 8px;color:var(--muted);font-size:8px}
-.segment-actions button{display:flex;align-items:center;gap:5px;color:var(--muted);border-radius:3px;padding:4px 6px;font-size:9px}
-.segment-actions button:hover{color:var(--green);background:var(--surface)}
-.segment-actions>button>span{opacity:0;transition:opacity .2s}
-.segment:hover .segment-actions>button>span{opacity:1}
 .parallel .segment-body{display:grid;grid-template-columns:1fr 1fr;gap:24px}
 .parallel .segment-en{padding-right:22px}
 .parallel .segment p{font-size:calc(var(--reading-size,18px) - 1px)}
@@ -463,8 +460,6 @@ h1,h2,h3,p{margin:0}
 .segment p{font-size:var(--reading-size,18px);line-height:2;letter-spacing:.2px}
 .first-segment p{font-size:calc(var(--reading-size,18px) + 4px);line-height:1.7}
 .segment-actions{min-height:29px;margin-bottom:13px;font-size:8px}
-.segment-actions button{font-size:9px;padding:6px}
-.segment-actions>button>span{opacity:1}
 .parallel .segment-body{display:flex;flex-direction:column;gap:18px}
 .parallel .segment-en{padding-right:0;padding-bottom:15px}
 .parallel .segment p{font-size:var(--reading-size,18px)}
@@ -525,3 +520,12 @@ h1,h2,h3,p{margin:0}
 }
 
 .txt-document .segment p{white-space:pre-wrap;overflow-wrap:anywhere}.txt-document .first-segment .segment-zh p::first-letter{float:none;font:inherit;margin:0}.txt-document .segment{margin-bottom:1.2em}
+
+.reading-paged{scroll-behavior:auto;overflow-anchor:none}
+.reading-continuous{scroll-behavior:auto}
+.reading-layout-select{font:inherit;font-size:12px;color:var(--muted);background:var(--surface);border:0;border-radius:5px;padding:6px 8px;max-width:120px}
+.continuous-page{display:flow-root;min-height:1px}
+.continuous-page .flow-document{margin:0 auto;min-height:0}
+.continuous-page + .continuous-page{border-top:1px solid var(--surface-raised)}
+.continuous-page .pdf-document{padding-bottom:16px}
+@media(max-width:760px){.reading-layout-select{font-size:11px;max-width:110px}.reading-layout-select+.sizing-controls{margin:0 0 0 auto}}

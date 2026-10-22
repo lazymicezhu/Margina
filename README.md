@@ -19,8 +19,8 @@ A mobile-first web reader for bilingual academic papers, with highlights, notes,
 - Use the PDF.js compatibility build for Safari. Public PDF caches are checked before reading and replaced if unreadable or mismatched, preserving notes and progress; verified bytes go directly to the reader without a second cache read. Unchanged public metadata does not rewrite the PDF cache. Failed reads offer a reload action.
 - Read the Chinese half, English half, or full spread of a bilingual PDF. PDF rendering follows screen pixel density and redraws after pinch zoom, within a bounded bitmap memory budget; low-resolution scans retain their source detail.
 - Open in the original PDF by default, with the Chinese half selected for bilingual papers, even when a reading bundle is present. Manually switch to mobile-friendly paragraphs using a matching translation bundle; compare languages and consult the original glossary.
-- Swipe left/right within the reading area to turn pages. Vertical scrolling, text selection and pinch zoom remain available; enlarged PDFs keep horizontal panning.
-- Highlight PDF text, attach notes to pages or segments, and save bookmarks and progress.
+- Choose continuous vertical scrolling or left/right page turns for TXT, PDF and paragraph views; the browser remembers the choice. Continuous reading mounts nearby pages only and follows the visible page for progress. Page buttons and page-number jumps land at the page top. Text selection and pinch zoom remain available; enlarged PDFs keep horizontal panning.
+- Select text to highlight or take notes; TXT and paragraph reading have no per-paragraph note buttons. Existing notes, bookmarks and progress are preserved.
 - Use a quiet, borderless interface with automatic light/dark appearance, collapsible explanations, and copyable notes. Copy confirmation fades after 2.5 seconds; reduced-motion preferences are respected. PDF artwork keeps its original colors.
 - Request Markdown exports of notes. End-to-end browser download validation remains pending.
 

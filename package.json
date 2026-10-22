@@ -12,8 +12,8 @@
     "typecheck": "node ./node_modules/typescript/bin/tsc -b",
     "build:cloud": "node scripts/cloud-build.mjs",
     "dev:cloud": "node scripts/cloud-local.mjs",
-    "deploy:cloud": "npm run build:cloud && wrangler deploy --config wrangler.production.jsonc",
-    "db:cloud": "wrangler d1 execute margina --remote --file server/schema.sql --config wrangler.production.jsonc",
+    "deploy:cloud": "npm run build:cloud && node node_modules/wrangler/bin/wrangler.js deploy --config wrangler.production.jsonc",
+    "db:cloud": "node node_modules/wrangler/bin/wrangler.js d1 execute margina --remote --file server/schema.sql --config wrangler.production.jsonc",
     "test": "node --test tests/*.test.cjs tests/*.test.mjs"
   },
   "dependencies": {

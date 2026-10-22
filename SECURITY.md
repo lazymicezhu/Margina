@@ -2,13 +2,13 @@
 
 ## Current scope
 
-Margina is deployed on Cloudflare Workers with D1 and private R2 storage. The public catalog is available; production Access configuration is pending and private APIs currently reject unauthenticated requests. Local development remains available with loopback-only test identities.
+Margina is deployed on Cloudflare Workers with D1 and private R2 storage. The public catalog is available; production Access protects `/api/private/*` and redirects unauthenticated requests to email-code login. The initial Allow policy lists only the configured administrator; additional login accounts must be added explicitly. Local development remains available with loopback-only test identities.
 
 Publishing is explicit: uploaded PDFs and reading bundles are public documents. Do not upload private research data. The Worker routes public downloads through a catalog visibility check; private reading records are scoped to the verified subject. Access JWT signatures, issuer, audience and expiry are verified with `jose`; user-supplied identity fields are never authoritative. Cookie-authenticated writes require an exact same-origin `Origin` header. Local test identities require explicit local environment flags and a loopback hostname, use signed HttpOnly cookies, and are disabled in the production configuration.
 
 PDFs and notes are not end-to-end encrypted. Browser data is unencrypted IndexedDB and remains accessible to someone with access to the same browser profile; logout hides account records but does not erase the local cache. Keep each person's device/browser profile private. Clearing website data loses cached files and unsynced records. Markdown is not a complete restorable backup. New account writes use transactions, optional browser locks and server version checks; the legacy local-only editor still has its original stale-tab limitations.
 
-An 8 GB application file budget reserves storage atomically before uploads; this is not an account-wide Cloudflare billing cap. Withdrawal hides future public downloads but keeps stored files and cannot revoke existing downloaded copies. Production login, load, maximum-size uploads and Cloudflare Free CPU limits require deployment-stage verification. See [Cloudflare scope and limitations](docs/CLOUDFLARE.md).
+An 8 GB application file budget reserves storage atomically before uploads; this is not an account-wide Cloudflare billing cap. Withdrawal hides future public downloads but keeps stored files and cannot revoke existing downloaded copies. The public catalog and Access login redirect have been verified online. Completing an email-code session, load, maximum-size uploads and Cloudflare Free CPU limits still require validation. See [Cloudflare scope and limitations](docs/CLOUDFLARE.md).
 
 ## Repository and build hygiene
 

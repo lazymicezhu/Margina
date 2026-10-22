@@ -20,7 +20,7 @@
 
 ## Later: Cloudflare and sync
 
-The local implementation now includes static hosting configuration, authenticated APIs, a D1 database and R2 file storage, with version checks and conflict copies. Next: provision only on explicit request, configure and validate real Access login, evaluate public-service upload quotas/rate limits, and test actual free-plan CPU/load and large files. Verify the actual free-tier limits at implementation time; no free-usage or cost guarantee is made by this prototype. No deployment or cloud resources have been provisioned.
+The local implementation now includes static hosting configuration, authenticated APIs, a D1 database and R2 file storage, with version checks and conflict copies. Worker, D1 and R2 have been provisioned at the user’s request. Next: configure and validate real Access login, evaluate public-service upload quotas/rate limits, and test actual free-plan CPU/load and large files. Verify the actual free-tier limits at implementation time; no free-usage or cost guarantee is made by this prototype. The public site is deployed; production login remains pending.
 
 ## Validation baseline — 2026-10-22
 

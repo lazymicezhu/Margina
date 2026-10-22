@@ -6,7 +6,7 @@ English | [简体中文](README.zh-CN.md)
 
 A mobile-first web reader for bilingual academic papers, with highlights, notes, and reading progress stored in your browser. Margina reuses final PDFs, translation segments, and glossaries from the `academic-pdf-bilingual` workflow powered by BabelDOC. It does not translate papers or require an AI API key.
 
-> **v0.1.0.** Public library, account sync and an administrator console are implemented for Cloudflare Workers / D1 / R2. Follow the [deployment guide](docs/CLOUDFLARE.md) to publish directly; no local preview or Git push is required. Cloud resources are not provisioned yet.
+> **v0.1.0.** Public library, account sync and an administrator console are implemented for Cloudflare Workers / D1 / R2. Follow the [deployment guide](docs/CLOUDFLARE.md) to publish directly; no local preview or Git push is required. The public site is deployed at https://margina.2644860482.workers.dev with D1 and private R2 storage; email login is being configured.
 
 ## Features
 

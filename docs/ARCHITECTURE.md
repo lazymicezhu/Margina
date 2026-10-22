@@ -1,6 +1,6 @@
 # Architecture / 架构
 
-Margina is a static React + TypeScript application built with Vite. PDF.js renders PDFs in a Web Worker; IndexedDB stores local data. A Cloudflare Worker now provides a public catalog and authenticated upload / reading-record APIs, backed by D1 and private R2 bindings. This is tested locally, not deployed.
+Margina is a static React + TypeScript application built with Vite. PDF.js renders PDFs in a Web Worker; IndexedDB stores local data. A Cloudflare Worker now provides a public catalog and authenticated upload / reading-record APIs, backed by D1 and private R2 bindings. The public Worker, D1 and private R2 storage are deployed; production Access configuration is pending.
 
 ```text
 PDF file → SHA-256 → PDF.js metadata / cover → IndexedDB Book
@@ -57,7 +57,7 @@ Runtime PDF resources are served locally from `/pdf-assets/`; no CDN or translat
 
 Local Wi-Fi previews can bind Vite preview to `0.0.0.0`. `src/browser-compat.ts` preserves SHA-256 book identities and UUID annotation IDs when HTTP LAN origins lack SubtleCrypto / randomUUID; hashing and data storage remain browser-side. Clipboard copying falls back to the browser copy command.
 
-Asset URLs currently assume hosting at the origin root. GitHub Pages subpath hosting is not configured. Cloudflare Workers/D1/R2 implementation and local simulation are present; production resources and Access configuration remain unprovisioned. This repository’s CI only checks and builds code. `/api/catalog` and `/api/papers/*` are public; `/api/private/*` requires a verified Access JWT in production. Local identity requires both explicit local environment flags and a loopback hostname. See [Cloudflare setup](CLOUDFLARE.md).
+Asset URLs currently assume hosting at the origin root. GitHub Pages subpath hosting is not configured. Cloudflare Workers/D1/R2 implementation and local simulation are present; production resources are provisioned, while Access configuration remains pending. This repository’s CI only checks and builds code. `/api/catalog` and `/api/papers/*` are public; `/api/private/*` requires a verified Access JWT in production. Local identity requires both explicit local environment flags and a loopback hostname. See [Cloudflare setup](CLOUDFLARE.md).
 
 ## Interface behavior
 

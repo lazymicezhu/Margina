@@ -1,6 +1,6 @@
 # Cloudflare 部署与管理后台
 
-使用 Workers 托管网页和接口、D1 保存账号与笔记、R2 保存 PDF / JSON。无需先运行本地预览，也不需要推送 GitHub。目前代码已准备，云资源尚未创建。
+使用 Workers 托管网页和接口、D1 保存账号与笔记、R2 保存 PDF / JSON。无需先运行本地预览，也不需要推送 GitHub。当前公共网站为 https://margina.2644860482.workers.dev，Worker、D1 和私有 R2 已部署。Zero Trust Free 已开通，邮箱登录配置尚未完成。
 
 ## 1. 准备 Cloudflare
 

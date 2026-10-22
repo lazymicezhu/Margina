@@ -2,7 +2,7 @@
 
 ## Current scope
 
-Margina remains a local preview. A Cloudflare Worker now implements a public catalog and authenticated upload / personal-record APIs against locally simulated D1 and R2. Production resources, Access configuration and deployment have not been created. The preview binds to loopback.
+Margina is deployed on Cloudflare Workers with D1 and private R2 storage. The public catalog is available; production Access configuration is pending and private APIs currently reject unauthenticated requests. Local development remains available with loopback-only test identities.
 
 Publishing is explicit: uploaded PDFs and reading bundles are public documents. Do not upload private research data. The Worker routes public downloads through a catalog visibility check; private reading records are scoped to the verified subject. Access JWT signatures, issuer, audience and expiry are verified with `jose`; user-supplied identity fields are never authoritative. Cookie-authenticated writes require an exact same-origin `Origin` header. Local test identities require explicit local environment flags and a loopback hostname, use signed HttpOnly cookies, and are disabled in the production configuration.
 

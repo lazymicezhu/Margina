@@ -519,7 +519,12 @@ h1,h2,h3,p{margin:0}
 .reader-panel.is-open{visibility:visible}
 }
 
-.txt-document .segment p{white-space:pre-wrap;overflow-wrap:anywhere}.txt-document .first-segment .segment-zh p::first-letter{float:none;font:inherit;margin:0}.txt-document .segment{margin-bottom:1.2em}
+/* TXT uses its own prose layout rather than the PDF paragraph offsets. */
+.reading-txt{scrollbar-gutter:auto}
+.txt-document .segment{padding-left:0;margin-left:0;margin-bottom:1.2em}
+.txt-document .segment p{white-space:pre-wrap;overflow-wrap:anywhere;text-wrap:wrap;text-align:justify;text-align-last:start;text-justify:inter-character;letter-spacing:0}
+.txt-document .first-segment .segment-zh p::first-letter{float:none;font:inherit;margin:0}
+@media(max-width:760px){.txt-document{padding-inline:16px}.reading-txt{scrollbar-width:none}.reading-txt::-webkit-scrollbar{display:none;width:0}}
 
 .reading-paged{scroll-behavior:auto;overflow-anchor:none}
 .reading-continuous{scroll-behavior:auto}

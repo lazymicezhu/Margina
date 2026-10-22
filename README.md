@@ -14,7 +14,7 @@ A mobile-first web reader for bilingual academic papers, with highlights, notes,
 - Separate each account’s notes, highlights, bookmarks and progress; synchronize changes with version checks, conflict copies, deletion tracking and a persistent local queue. Removing a shelf item preserves notes and the public file.
 - Retain the original local-only library under Settings → Local documents; existing files are never automatically published.
 
-- Read TXT (up to 10 MB, UTF-8 / BOM-marked UTF-16 / GB18030) with adjustable font size, fixed pagination, swipe navigation, excerpts, notes and synced progress. Text is rendered as plain text, never HTML.
+- Read TXT (up to 10 MB, UTF-8 / BOM-marked UTF-16 / GB18030) with adjustable font size, fixed pagination, swipe navigation, excerpts, notes and synced progress. Text is rendered as plain text, never HTML. TXT prose uses justified lines and 16 px side padding on phones; paragraph endings and explicit line breaks remain natural.
 - Import PDFs, deduplicate by SHA-256, search the library, and star papers.
 - Use the PDF.js compatibility build for Safari. Public PDF caches are checked before reading and replaced if unreadable or mismatched, preserving notes and progress; verified bytes go directly to the reader without a second cache read. Unchanged public metadata does not rewrite the PDF cache. Failed reads offer a reload action.
 - Read the Chinese half, English half, or full spread of a bilingual PDF. PDF rendering follows screen pixel density and redraws after pinch zoom, within a bounded bitmap memory budget; low-resolution scans retain their source detail.

@@ -1,5 +1,7 @@
 # Margina repository guidance
 
+- Canonical local project directory: `/Users/lazymice/Library/Mobile Documents/com~apple~CloudDocs/重要:常用文件备份/Lazymice/Margina`. Make all future project edits and run project commands here unless the user explicitly requests another location.
+- The former `/Users/lazymice/Documents/Codex/2026-10-22/github/yuejian` path is a compatibility symlink to this directory. Keep it pointing here; do not replace it with an independent checkout or edit the `yuejian.backup-before-migration-20261022` backup.
 - Build a mobile-first bilingual academic reader. Keep UI text primarily Chinese and product branding Margina.
 - Read README.md and docs/ARCHITECTURE.md before changing architecture; update both READMEs for user-facing setup, feature or limitation changes.
 - Preserve IndexedDB `yuejian-library` and bundle `yuejian-babeldoc-v1` compatibility unless implementing a documented migration.

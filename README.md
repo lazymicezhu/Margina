@@ -14,6 +14,7 @@ A mobile-first web reader for bilingual academic papers, with highlights, notes,
 - Read the Chinese half, English half, or full spread of a bilingual PDF.
 - Switch to mobile-friendly paragraphs using a matching translation bundle; compare languages and consult the original glossary.
 - Highlight PDF text, attach notes to pages or segments, and save bookmarks and progress.
+- Use a quiet, borderless interface with automatic light/dark appearance, collapsible explanations, and copyable notes. Copy confirmation fades after 2.5 seconds; reduced-motion preferences are respected. PDF artwork keeps its original colors.
 - Request Markdown exports of notes. End-to-end browser download validation remains pending.
 
 Paragraph mode uses intermediate translation segments. It can omit repeated content or later layout repairs; the final PDF remains authoritative for figures, formulas, footnotes, and revisions. Scanned PDFs can be rendered but do not gain selectable text or OCR.
@@ -29,6 +30,8 @@ npm ci
 npm run dev
 ```
 
+Local folder names containing a colon (such as some iCloud paths on macOS) are supported through a temporary development-server path alias; project files remain in their original folder.
+
 Open the local URL printed by Vite. For a production build preview:
 
 ```sh
@@ -42,7 +45,7 @@ A fresh clone starts with an empty library. Import your own PDF; no research pap
 
 ## Bilingual workflow
 
-Import the final bilingual PDF to read its original layout. To enable paragraphs and glossary, export a `.yuejian.json` bundle using [the BabelDOC adapter](docs/BABELDOC.md), then import it alongside the matching PDF. Existing bundle identifiers retain the preview's original name for compatibility.
+Import the final bilingual PDF to read its original layout. To enable paragraphs and glossary, export a `.yuejian.json` bundle using [the BabelDOC adapter](docs/BABELDOC.md), then import it alongside the matching PDF. Existing bundle identifiers retain the preview's original name for compatibility. The adapter supports English→Chinese and Chinese→English jobs, nested glossaries, mixed batch folders, and legacy translation tracking. Versioned local catalogs can add papers or update bundles without replacing existing notes, bookmarks, or progress.
 
 ## Data and privacy
 

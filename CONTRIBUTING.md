@@ -21,3 +21,5 @@ Do not change `yuejian-library` or `yuejian-babeldoc-v1` without a migration pla
 ## Deployment and licensing
 
 CI builds only; it must not publish a site. Deployment requires a separate task and a clean build free of local samples. The original project code has no selected license yet; do not introduce third-party code without recording its origin and license.
+
+Adapter regression tests use synthetic PDFs: `python -m unittest discover -s tests -v` (PyMuPDF required). Local catalog merge tests run with `node --test tests/catalog.test.cjs`; they verify note/progress preservation, revision idempotency and mismatched-bundle rejection.

@@ -15,10 +15,12 @@ Notes → Markdown download request
 | --- | --- |
 | `src/App.tsx` | Library, PDF / bundle imports, optional local samples, application state |
 | `src/Reader.tsx` | PDF rendering, paragraph view, selection, notes, glossary, page navigation |
+| `src/interactions.tsx` | Shared spring feedback, short-message reveal, Grid disclosure and clipboard feedback |
+| `src/catalog.ts`, `src/bundle.ts` | Versioned local catalog imports, bundle validation; metadata-only updates preserve reading records |
 | `src/pdf.ts` | PDF.js worker setup, metadata, thumbnail and SHA-256 book identity |
 | `src/storage.ts` | IndexedDB transactions and Markdown formatting / download |
 | `src/types.ts` | Book, annotation, bundle and coordinate types |
-| `src/style.css`, `src/text-layer.css` | Responsive UI and PDF selectable text layer |
+| `src/style.css`, `src/design.css`, `src/text-layer.css` | Responsive UI and PDF selectable text layer |
 | `scripts/prepare-assets.mjs` | Copy PDF.js fonts, CMaps and WASM from installed dependencies |
 | `scripts/import_babeldoc.py` | Validate and export existing translation jobs |
 
@@ -34,7 +36,7 @@ Notes → Markdown download request
 
 ## Bilingual layout
 
-The supported workflow produces a double-width page: original English on the left, final Chinese on the right. Cropping is visual only; the original Blob is unchanged. The canvas and selectable text layer must use the same crop position. A stable scrollbar gutter prevents page-width changes from triggering repeated PDF rendering near overflow thresholds.
+The supported workflow produces a double-width page: English on the left and Chinese on the right (either language may be the original). Cropping is visual only; the original Blob is unchanged. The canvas and selectable text layer must use the same crop position. A stable scrollbar gutter prevents page-width changes from triggering repeated PDF rendering near overflow thresholds.
 
 Paragraph mode is an alternate view of translation-job segments, not a PDF extraction or reflow engine. Desktop comparison uses two columns; narrow screens stack the two languages. Figures and precise formulas remain in the PDF.
 
@@ -43,3 +45,9 @@ Paragraph mode is an alternate view of translation-job segments, not a PDF extra
 Runtime PDF resources are served locally from `/pdf-assets/`; no CDN or translation endpoint is used. Optional samples are fetched from `/samples/catalog.json`. Missing samples (including a static host's HTML fallback) result in an empty library.
 
 Asset URLs currently assume hosting at the origin root. GitHub Pages subpath hosting is not configured. Cloudflare hosting, authentication, database / object storage and sync are future work; this repository's CI only checks and builds code.
+
+## Interface behavior
+
+`design.css` defines neutral theme surfaces and a 40-point dark-mode weight compensation. PDF canvases and their selectable text-layer geometry remain independent of theme typography. Disclosure uses Grid rows (0fr → 1fr), without measuring content height. Unit-mass spring samples use stiffness/damping 1200/80 for file-drag feedback and 380/18 for affirmative icons. Short interface messages reveal characters over 90 ms, staggered by 30 ms; paper content renders immediately. Copy feedback holds for 2500 ms and fades for 180 ms before resetting. Motion honors the system reduced-motion preference.
+
+Catalog revision is stored in `settings.localCatalogRevision`; legacy `initialized` remains compatible. Catalog updates patch existing books by PDF hash and never replace annotations, bookmarks or reading progress.

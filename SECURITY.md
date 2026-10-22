@@ -2,15 +2,19 @@
 
 ## Current scope
 
-Margina v0.1 is a local prototype, not a multi-user hosted service. PDFs and notes are stored unencrypted in the current browser's IndexedDB. There is no application authentication, remote backup, cloud sync, telemetry, or document-upload endpoint. The development / preview server listens on loopback by default.
+Margina remains a local preview. A Cloudflare Worker now implements a public catalog and authenticated upload / personal-record APIs against locally simulated D1 and R2. Production resources, Access configuration and deployment have not been created. The preview binds to loopback.
 
-Browser storage is not a durable backup: clearing website data, browser storage eviction, or switching origins may make the library unavailable. Markdown export contains note text and quotations, not a restorable copy of the entire library. Another tab can overwrite stale note state; cross-tab conflict handling is not yet implemented.
+Publishing is explicit: uploaded PDFs and reading bundles are public documents. Do not upload private research data. The Worker routes public downloads through a catalog visibility check; private reading records are scoped to the verified subject. Access JWT signatures, issuer, audience and expiry are verified with `jose`; user-supplied identity fields are never authoritative. Cookie-authenticated writes require an exact same-origin `Origin` header. Local test identities require explicit local environment flags and a loopback hostname, use signed HttpOnly cookies, and are disabled in the production configuration.
+
+PDFs and notes are not end-to-end encrypted. Browser data is unencrypted IndexedDB and remains accessible to someone with access to the same browser profile; logout hides account records but does not erase the local cache. Keep each person's device/browser profile private. Clearing website data loses cached files and unsynced records. Markdown is not a complete restorable backup. New account writes use transactions, optional browser locks and server version checks; the legacy local-only editor still has its original stale-tab limitations.
+
+An 8 GB application file budget reserves storage atomically before uploads; this is not an account-wide Cloudflare billing cap. Withdrawal hides future public downloads but keeps stored files and cannot revoke existing downloaded copies. Production login, load, maximum-size uploads and Cloudflare Free CPU limits require deployment-stage verification. See [Cloudflare scope and limitations](docs/CLOUDFLARE.md).
 
 ## Repository and build hygiene
 
 - Do not commit PDFs, translation jobs, bundles, screenshots of private documents, secrets, or generated output.
-- `public/samples/`, `public/pdf-assets/`, `artifacts/`, `dist/`, `.env*` and common key formats are ignored.
-- Git ignore rules do not filter build output. Vite copies `public/` into `dist/`, including private samples. Build a future deployment from a clean checkout and inspect its files before publication.
+- `public/samples/`, `public/pdf-assets/`, `artifacts/`, `dist/`, `dist-cloud/`, `.wrangler/`, `.dev.vars*`, `.env*` and common key formats are ignored.
+- Git ignore rules do not filter build output. Vite copies `public/` into `dist/`, including private samples. For deployment use `npm run build:cloud`, whose asset allowlist excludes samples and produces `dist-cloud/`; build from a clean checkout and inspect files before publication.
 - Do not expose local preview servers or add a deployment workflow as part of routine development.
 - Do not place private papers in public issues, CI logs, release archives or workflow artifacts.
 

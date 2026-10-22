@@ -3,12 +3,12 @@
 ## Local workflow
 
 1. Use Node.js 22.13+ (`nvm use` with a compatible Node 22 installation).
-2. Run `npm ci`, then `npm run dev`.
+2. Run `npm ci`, then `npm run build:cloud` and `npm run dev:cloud` for the complete local app. `npm run dev` remains frontend-only.
 3. Keep edits focused; update both READMEs when features, setup or limitations change.
 4. Run `npm run build` (includes TypeScript checks) before submitting changes.
 5. For reader changes, verify the affected behavior in the local preview at phone and desktop widths.
 
-There is no automated browser test suite yet. Do not report unrun checks as passing. A change involving annotations should check text selection, language switching, zoom, page navigation and reload persistence. For bundle work, validate original / PDF binding and failure cases with synthetic or redistributable fixtures. Use `npm audit` when changing dependencies and review findings.
+Run `npm test` for the local Worker and merge regression suite. Browser checks currently use local synthetic fixtures; there is not yet a portable browser regression command. Do not report unrun checks as passing. A change involving annotations should check text selection, language switching, zoom, page navigation and reload persistence. For bundle work, validate original / PDF binding and failure cases with synthetic or redistributable fixtures. Use `npm audit` when changing dependencies and review findings.
 
 ## Pull requests
 

@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "margina",
+  "send_metrics": false,
+  "workers_dev": true,
+  "preview_urls": false,
+  "main": "server/worker.mjs",
+  "compatibility_date": "2026-10-22",
+  "assets": { "directory": "./dist-cloud", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
+  "vars": {
+    "ENVIRONMENT": "production",
+    "LOCAL_DEV_AUTH": "false",
+    "MAX_STORAGE_BYTES": "8000000000",
+    "ACCESS_ISSUER": "",
+    "ACCESS_AUD": ""
+  },
+  // Copy to wrangler.production.jsonc and fill in the D1 database ID.
+  "d1_databases": [{ "binding": "DB", "database_name": "margina", "database_id": "REPLACE_BEFORE_DEPLOYMENT" }],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "margina-files" }]
+}

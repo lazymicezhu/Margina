@@ -1,5 +1,8 @@
 node_modules/
 dist/
+dist-cloud/
+.dev.vars*
+wrangler.production.jsonc
 *.tsbuildinfo
 .DS_Store
 .env*

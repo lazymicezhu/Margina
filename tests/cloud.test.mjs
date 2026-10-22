@@ -1,0 +1,134 @@
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { build } from 'esbuild';
+import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
+import { createHash } from 'node:crypto';
+
+let mf, directory, alice, bob;
+const bytes = Buffer.from('%PDF-1.4\n% Synthetic test fixture; no real paper\n%%EOF\n');
+const id = createHash('sha256').update(bytes).digest('hex');
+const empty = () => ({ shelf: false, starred: false, page: 1, opened: 0, bookmarks: [], annotations: [] });
+async function request(path, method = 'GET', body, cookie, headers = {}) {
+  const init = { method, headers: { ...(method !== 'GET' ? { Origin: 'http://localhost' } : {}), ...(path.endsWith('/bundle') && method === 'PUT' ? { 'X-Public-Upload': 'confirmed' } : {}), ...(cookie ? { Cookie: cookie } : {}), ...headers } };
+  if (body !== undefined) { init.body = JSON.stringify(body); init.headers['Content-Type'] = 'application/json'; }
+  return mf.dispatchFetch(`http://localhost${path}`, init);
+}
+async function upload(cookie, override = {}) {
+  return mf.dispatchFetch(`http://localhost/api/private/papers/${id}`, {
+    method: 'PUT', headers: { Origin: 'http://localhost', Cookie: cookie, 'Content-Type': 'application/pdf', 'Content-Length': String(bytes.length),
+      'X-Public-Upload': 'confirmed', 'X-Paper-Metadata': encodeURIComponent(JSON.stringify({ title: 'Synthetic paper', author: 'Margina tests', pages: 2, bilingual: false, fileName: 'test.pdf' })), ...override }, body: bytes,
+  });
+}
+before(async () => {
+  directory = await mkdtemp(join(tmpdir(), 'margina-worker-test-'));
+  const outfile = join(directory, 'worker.mjs');
+  await build({ entryPoints: ['server/worker.mjs'], bundle: true, format: 'esm', platform: 'browser', outfile, logLevel: 'silent' });
+  mf = new Miniflare(convertV4MiniflareOptions({ name: 'margina-tests', modules: true, script: await readFile(outfile, 'utf8'), compatibilityDate: '2026-10-22', d1Databases: ['DB'], r2Buckets: ['FILES'], bindings: { ENVIRONMENT: 'local', LOCAL_DEV_AUTH: 'true' } }));
+  const db = await mf.getD1Database('DB');
+  const schema = await readFile('server/schema.sql', 'utf8');
+  for (const sql of schema.replace(/--[^\n]*/g, '').split(';').filter(s => s.trim())) await db.prepare(sql).run();
+  alice = (await request('/api/dev/login', 'POST', { name: 'alice' })).headers.get('set-cookie').split(';')[0];
+  bob = (await request('/api/dev/login', 'POST', { name: 'bob' })).headers.get('set-cookie').split(';')[0];
+});
+after(async () => { await mf?.dispose(); if (directory) await rm(directory, { recursive: true, force: true }); });
+
+test('guests can browse, but cannot upload, sync, or forge identity', async () => {
+  assert.equal((await request('/api/catalog')).status, 200);
+  assert.equal((await request('/api/private/records')).status, 401);
+  assert.equal((await request('/api/private/records', 'GET', undefined, undefined, { 'Cf-Access-Authenticated-User-Email': 'alice@local.test' })).status, 401);
+  assert.equal((await upload('')).status, 401);
+  assert.equal((await request('/api/session')).status, 200);
+});
+test('upload requires same origin and explicit public consent', async () => {
+  assert.equal((await upload(alice, { Origin: 'https://evil.example' })).status, 403);
+  assert.equal((await upload(alice, { 'X-Public-Upload': '' })).status, 400);
+});
+test('PDF uploaded once, public catalogue never includes account identities', async () => {
+  const result = await upload(alice);
+  assert.equal(result.status, 201, await result.clone().text());
+  const paper = (await result.json()).paper;
+  assert.equal(paper.id, id); assert.equal(paper.owner, undefined);
+  assert.equal((await upload(bob)).status, 200);
+  const papers = (await (await request('/api/catalog')).json()).papers;
+  assert.equal(papers.length, 1);
+  assert.equal(JSON.stringify(papers).includes('local-alice'), false);
+  const response = await request(`/api/papers/${id}/pdf`);
+  assert.equal(response.status, 200);
+  assert.equal(Buffer.compare(Buffer.from(await response.arrayBuffer()), bytes), 0);
+});
+test('wrong PDF hash cannot publish a document', async () => {
+  const badId = 'a'.repeat(64);
+  const response = await mf.dispatchFetch(`http://localhost/api/private/papers/${badId}`, { method: 'PUT', body: bytes, headers: {
+    Origin: 'http://localhost', Cookie: alice, 'Content-Type': 'application/pdf', 'Content-Length': String(bytes.length), 'X-Public-Upload': 'confirmed',
+    'X-Paper-Metadata': encodeURIComponent(JSON.stringify({ title: 'bad', author: '', pages: 1, fileName: 'bad.pdf' })),
+  } });
+  assert.notEqual(response.status, 201);
+  assert.equal((await request(`/api/papers/${badId}`)).status, 404);
+});
+test('reading records are isolated and concurrent writes use compare-and-swap', async () => {
+  const data = { ...empty(), shelf: true, page: 2, annotations: [{ id: 'note', page: 2, quote: 'Quote', text: 'Private note', rects: [], color: 'yellow', language: 'en', created: 1, updated: 1 }] };
+  const put = await request(`/api/private/records/${id}`, 'PUT', { version: 0, data }, alice);
+  assert.equal(put.status, 200, await put.clone().text());
+  assert.equal((await put.json()).record.version, 1);
+  const conflict = await request(`/api/private/records/${id}`, 'PUT', { version: 0, data: empty() }, alice);
+  assert.equal(conflict.status, 409);
+  assert.equal((await conflict.json()).record.data.annotations[0].text, 'Private note');
+  const b = await (await request('/api/private/records', 'GET', undefined, bob)).json();
+  assert.equal(b.records.length, 0);
+  assert.equal((await request(`/api/private/records/${id}`, 'PUT', { version: 0, data }, bob, { 'X-Margina-User': 'local-alice' })).status, 401);
+  const a = await (await request('/api/private/records', 'GET', undefined, alice)).json();
+  const removal = await request(`/api/private/records/${id}`, 'PUT', { version: 1, data: { ...data, shelf: false } }, alice);
+  assert.equal(removal.status, 200);
+  const changes = await (await request(`/api/private/records?after=${a.cursor}`, 'GET', undefined, alice)).json();
+  assert.equal(changes.records.length, 1); assert.equal(changes.records[0].data.shelf, false);
+  assert.equal(changes.records[0].data.annotations.length, 1);
+});
+test('invalid reading data and bad cursor are rejected', async () => {
+  assert.equal((await request(`/api/private/records/${id}`, 'PUT', { version: 2, data: { ...empty(), page: 100 } }, alice)).status, 400);
+  assert.equal((await request('/api/private/records?after=NaN', 'GET', undefined, alice)).status, 400);
+});
+test('two simultaneous writes to the same version cannot both succeed', async () => {
+  const responses = await Promise.all([
+    request(`/api/private/records/${id}`, 'PUT', { version: 0, data: { ...empty(), shelf: true } }, bob),
+    request(`/api/private/records/${id}`, 'PUT', { version: 0, data: { ...empty(), page: 2 } }, bob),
+  ]);
+  assert.deepEqual(responses.map(r => r.status).sort(), [200, 409]);
+});
+test('only owner/admin can attach a matching reading bundle', async () => {
+  const bundle = { format: 'yuejian-babeldoc-v1', pdfSha256: id, title: '双语测试', author: 'Test', pageCount: 2, segments: [{ id: 'one', page: 1, source: 'Hello', zh: '你好', keep: true }], glossary: { Hello: '你好' } };
+  assert.equal((await request(`/api/private/papers/${id}/bundle`, 'PUT', bundle, bob)).status, 403);
+  assert.equal((await request(`/api/private/papers/${id}/bundle`, 'PUT', { ...bundle, pageCount: 3 }, alice)).status, 400);
+  assert.equal((await request(`/api/private/papers/${id}/bundle`, 'PUT', { ...bundle, pdfSha256: 'b'.repeat(64) }, alice)).status, 400);
+  const result = await request(`/api/private/papers/${id}/bundle`, 'PUT', bundle, alice);
+  assert.equal(result.status, 200, await result.clone().text());
+  assert.equal((await (await request(`/api/papers/${id}/bundle`)).json()).title, '双语测试');
+});
+test('uncollect preserves public paper; withdrawal blocks public files but keeps private notes', async () => {
+  assert.equal((await request(`/api/papers/${id}/pdf`)).status, 200);
+  assert.equal((await request(`/api/private/papers/${id}`, 'DELETE', undefined, bob)).status, 403);
+  assert.equal((await request(`/api/private/papers/${id}`, 'DELETE', undefined, alice)).status, 200);
+  assert.equal((await request(`/api/papers/${id}/pdf`)).status, 404);
+  assert.equal((await request(`/api/papers/${id}/bundle`)).status, 404);
+  assert.equal((await (await request('/api/catalog')).json()).papers.length, 0);
+  const personal = await (await request('/api/private/records', 'GET', undefined, alice)).json();
+  assert.equal(personal.records[0].data.annotations[0].text, 'Private note');
+});
+test('local test identity is unavailable on public hostnames', async () => {
+  const response = await mf.dispatchFetch('https://public.example/api/dev/login', { method: 'POST', headers: { Origin: 'https://public.example', 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'alice' }) });
+  assert.equal(response.status, 404);
+  const session = await mf.dispatchFetch('https://public.example/api/session', { headers: { Cookie: alice } });
+  assert.equal((await session.json()).user, null);
+});
+test('storage reservations reject uploads beyond the library budget', async () => {
+  const db = await mf.getD1Database('DB');
+  await db.prepare("INSERT INTO storage_allocations VALUES ('budget-test', 8000000000)").run();
+  const blocked = await mf.dispatchFetch(`http://localhost/api/private/papers/${'c'.repeat(64)}`, { method: 'PUT', body: bytes, headers: {
+    Origin: 'http://localhost', Cookie: alice, 'Content-Type': 'application/pdf', 'Content-Length': String(bytes.length), 'X-Public-Upload': 'confirmed',
+    'X-Paper-Metadata': encodeURIComponent(JSON.stringify({ title: 'budget test', author: '', pages: 1, fileName: 'budget.pdf' })),
+  } });
+  assert.equal(blocked.status, 413);
+  assert.match((await blocked.json()).error, /存储上限/);
+});

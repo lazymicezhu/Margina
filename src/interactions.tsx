@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Check, ChevronDown, Copy } from 'lucide-react';
+import { copyText } from './browser-compat';
 
 // Unit-mass spring response. Shared by drag feedback and affirmative actions.
 export function springFrames(stiffness: number, damping: number, duration: number) {
@@ -45,7 +46,7 @@ export function CopyButton({ text, onError }: { text: string; onError: () => voi
   }, [copied]);
   return <button className={`icon-button copy-button ${copied ? 'is-copied' : ''}`} aria-label={copied ? '已复制' : '复制笔记'} title={copied ? '已复制' : '复制笔记'} disabled={pending || copied} onClick={async () => {
     setPending(true);
-    try { await navigator.clipboard.writeText(text); if (mounted.current) setCopied(true); }
+    try { await copyText(text); if (mounted.current) setCopied(true); }
     catch { if (mounted.current) onError(); }
     finally { if (mounted.current) setPending(false); }
   }}><span className="copy-glyph" ref={ref}>{copied ? <Check size={14}/> : <Copy size={14}/>}</span><span className="sr-only" role="status">{copied ? '已复制' : ''}</span></button>;

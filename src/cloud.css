@@ -1,0 +1,49 @@
+.cloud-shell .intro { gap: 18px; }
+.cloud-shell .intro p { max-width: 520px; line-height: 1.8; }
+.cloud-notice { display: flex; align-items: center; gap: 10px; padding: 12px 15px; margin-bottom: 20px; background: var(--surface); border-radius: 8px; font-size: 11px; line-height: 1.8; color: var(--muted); }
+.cloud-notice > span { min-width: 0; overflow-wrap: anywhere; }
+.cloud-notice .text-button { margin-left: auto; flex-shrink: 0; }
+.cloud-search { width: min(100%, 340px); padding: 11px 13px; }
+.cloud-search input { flex: 1; width: 100%; font-size: 13px; }
+.typographic-cover { position: absolute; inset: 52px 24px 45px; display: flex; flex-direction: column; align-items: flex-start; gap: 18px; overflow: hidden; }
+.typographic-cover > strong { font-family: 'Songti SC',serif; font-size: 20px; line-height: 1.7; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.typographic-cover > span { font-size: 11px; color: var(--muted); }
+.public-card-actions { display: flex; align-items: center; gap: 10px; margin-top: 17px; }
+.public-card-actions .secondary-button { font-size: 12px; min-height: 38px; padding: 8px 12px; }
+.public-card-actions .icon-button { margin-left: auto; }
+.on-shelf { color: var(--muted); }
+.cloud-error { padding: 20px; border-radius: 8px; background: var(--surface); margin-bottom: 24px; }
+.cloud-error p { font-size: 13px; line-height: 1.8; margin-bottom: 16px; }
+.cloud-error button + button { margin-left: 16px; }
+.cloud-modal .storage-row { gap: 15px; }
+.cloud-modal .storage-row strong { text-align: right; overflow-wrap: anywhere; min-width: 0; }
+.cloud-modal .storage-row > span { flex-shrink: 0; }
+.upload-picker { display: grid; gap: 14px; padding: 18px; background: var(--surface); border-radius: 8px; font-size: 13px; }
+.upload-picker input { width: 100%; font-size: 12px; }
+.upload-file-list { padding: 0; margin: 15px 0; list-style: none; max-height: 180px; overflow: auto; }
+.upload-file-list li { display: flex; align-items: baseline; gap: 12px; padding: 7px 0; font-size: 12px; }
+.upload-file-list li > span { overflow-wrap: anywhere; min-width: 0; }
+.upload-file-list small { margin-left: auto; white-space: nowrap; color: var(--muted); }
+.consent { display: flex; align-items: flex-start; gap: 10px; font-size: 12px; line-height: 1.9; margin-top: 20px; }
+.consent input { flex-shrink: 0; margin-top: 5px; accent-color: var(--ink); }
+.cloud-modal a.wide-button { text-decoration: none; }
+.cloud-shell .empty-state .primary-button { margin-top: 22px; }
+.local-return { position: sticky; top: 0; z-index: 105; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 20px; background: var(--ink); color: var(--canvas); font-size: 12px; }
+.local-return button { display: flex; align-items: center; gap: 6px; color: inherit; }
+.local-return + .app-shell .sidebar { padding-top: 70px; }
+@media (max-width: 640px) {
+  .cloud-shell .intro { align-items: flex-start; }
+  .cloud-shell .intro p { font-size: 11px; margin-top: 10px; }
+  .cloud-shell .intro .primary-button { min-width: 76px; padding: 10px 12px; }
+  .cloud-notice { flex-wrap: wrap; padding: 10px 12px; }
+  .cloud-notice .text-button { margin-left: 0; }
+  .public-cover { height: 235px; }
+  .typographic-cover { inset-inline: 18px; }
+  .typographic-cover > strong { font-size: 18px; }
+  .cloud-modal { padding: 26px 22px; }
+  .cloud-modal input[type='file'] { font-size: 11px; }
+  .cloud-shell .collection-controls { flex-direction: row; }
+  .cloud-search { flex: 1; }
+  .cloud-shell .collection-controls > .text-button { flex-shrink: 0; }
+  .local-return span { display: none; }
+}

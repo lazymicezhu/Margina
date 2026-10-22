@@ -4,6 +4,8 @@
 - React / React DOM — Meta and contributors, MIT.
 - Lucide — Lucide contributors, ISC, with Feather-derived portions under MIT. See [licenses/LUCIDE.txt](licenses/LUCIDE.txt).
 - Vite — Vite contributors, MIT.
+- jose — panva and contributors, MIT. Server-side JWT verification and local test session signing.
+- Wrangler / Miniflare — Cloudflare and contributors, MIT / Apache-2.0 as declared by the installed packages. Local Workers, D1 and R2 development / testing. Not included in the frontend bundle.
 - TypeScript — Microsoft and contributors, Apache-2.0 (development dependency).
 - PyMuPDF — optional, separately installed dependency of the Python adapter; GNU AGPL-3.0 or Artifex commercial licensing, as declared by the tested 1.28.2 installation. It is not bundled into the web application.
 

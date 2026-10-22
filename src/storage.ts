@@ -61,6 +61,23 @@ export async function setting(key: string, value?: unknown): Promise<unknown> {
     tx.onerror = () => reject(tx.error);
   });
 }
+// Read/modify/write in one transaction, including across browser tabs.
+export async function updateSetting<T>(key: string, initial: T, change: (value: T) => T): Promise<T> {
+  const database = await db();
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction('settings', 'readwrite');
+    const store = tx.objectStore('settings');
+    const request = store.get(key);
+    let result: T;
+    request.onsuccess = () => {
+      try { result = change(request.result ?? initial); store.put(result, key); }
+      catch (error) { tx.abort(); reject(error); }
+    };
+    tx.oncomplete = () => resolve(result);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('保存已中断'));
+  });
+}
 export function saveFile(content: string | Blob, name: string, type = 'text/markdown;charset=utf-8') {
   const url = URL.createObjectURL(content instanceof Blob ? content : new Blob([content], { type }));
   const a = document.createElement('a'); a.href = url; a.download = name; a.click();

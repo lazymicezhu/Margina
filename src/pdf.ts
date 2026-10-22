@@ -2,14 +2,14 @@
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import worker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { Book } from './types';
+import { sha256 } from './browser-compat';
 GlobalWorkerOptions.workerSrc = worker;
 export function loadPdf(data: ArrayBuffer) {
   return getDocument({ data, cMapUrl: '/pdf-assets/cmaps/', cMapPacked: true, standardFontDataUrl: '/pdf-assets/standard_fonts/', wasmUrl: '/pdf-assets/wasm/' });
 }
 export async function makeBook(blob: Blob, fileName: string, sample = false): Promise<Book> {
   const bytes = await blob.arrayBuffer();
-  const hash = await crypto.subtle.digest('SHA-256', bytes);
-  const id = Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('');
+  const id = await sha256(bytes);
   const task = loadPdf(bytes);
   try {
     const pdf = await task.promise;

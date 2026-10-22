@@ -2,6 +2,8 @@
 
 ## Available in the local preview
 
+- Public catalog and account shelves, local Cloudflare Workers/D1/R2 service, verified-identity API boundary, explicit public uploads and private reading-record sync.
+- Administrator library upload/withdrawal/restore/deletion and per-account notes.
 - Responsive paper library and bilingual PDF view.
 - Translation-job paragraph and glossary integration.
 - Local highlights, notes, bookmarks and progress.
@@ -11,13 +13,14 @@
 
 - Real iOS / Android checks: long-press selection, soft keyboard, zoom and download behavior.
 - Complete browser download validation and add a restorable library backup format.
-- Cross-tab state consistency and annotation migration between PDF revisions.
+- Annotation migration between PDF revisions; improve legacy local-only cross-tab consistency.
+- Storage maintenance for orphan files and restorable account backups.
 - Better long-document navigation, search, accessibility and loading performance.
 - Decide the original project's license.
 
 ## Later: Cloudflare and sync
 
-Evaluate static hosting, authenticated APIs, a notes database and PDF object storage. Define authorization, conflict resolution, deletion and recovery before enabling cross-device sync. Verify the actual free-tier limits at implementation time; no free-usage or cost guarantee is made by this prototype. No deployment or cloud resources have been provisioned.
+The local implementation now includes static hosting configuration, authenticated APIs, a D1 database and R2 file storage, with version checks and conflict copies. Next: provision only on explicit request, configure and validate real Access login, evaluate public-service upload quotas/rate limits, and test actual free-plan CPU/load and large files. Verify the actual free-tier limits at implementation time; no free-usage or cost guarantee is made by this prototype. No deployment or cloud resources have been provisioned.
 
 ## Validation baseline — 2026-10-22
 
@@ -27,3 +30,13 @@ Evaluate static hosting, authenticated APIs, a notes database and PDF object sto
 - A PDF resize loop near scrollbar thresholds was fixed using a stable scrollbar gutter.
 - Markdown download automation timed out; download completion remains unverified.
 - Real mobile hardware testing and an automated UI regression suite remain pending.
+
+## Public library validation — 2026-10-22
+
+- Local Worker tests cover public/private access, same-origin writes, explicit publication, file hashes/deduplication, account isolation, compare-and-swap, shelf removal, withdrawal, matching bundles and storage budget.
+- Merge tests cover independent edits, same-note conflicts, concurrent deletion, bookmark removals and backwards reading progress.
+- Mobile-dimension browser checks cover upload, shelf actions, paragraph/PDF reading, notes/bookmarks and independent-browser account restoration, concurrent same-note edits, offline editing/reconnection and reload recovery. Widths 320/390/768 had no page overflow. Real Cloudflare login and mobile hardware remain unverified.
+
+## Administrator update — 2026-10-23
+
+Administrator endpoints and mobile layouts are implemented. Per user request, local runtime and browser tests were not run for this update; deployment-stage validation is pending. Cloudflare deployment instructions and commands are available in `docs/CLOUDFLARE.md`.

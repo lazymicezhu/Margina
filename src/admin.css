@@ -1,0 +1,35 @@
+.admin-shell { width: min(100%, 1100px); margin: 0 auto; padding: 32px 40px 80px; min-height: 100dvh; }
+.admin-header { display: flex; align-items: center; gap: 24px; margin-bottom: 32px; }
+.admin-header h1 { font-size: 25px; }
+.admin-tabs { display: flex; gap: 10px; margin-bottom: 28px; }
+.admin-tabs button { padding: 12px 22px; border-radius: 8px; color: var(--muted); }
+.admin-tabs button[aria-pressed='true'] { background: var(--surface); color: var(--ink); }
+.admin-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+.admin-toolbar select { padding: 11px; border: 0; border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; }
+.admin-paper-list, .admin-user-list { display: grid; gap: 12px; }
+.admin-paper { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 22px; border-radius: 10px; background: var(--surface); }
+.admin-paper > div:first-child { min-width: 0; }
+.admin-paper h2 { font-size: 16px; line-height: 1.7; overflow-wrap: anywhere; }
+.admin-paper p, .admin-paper small { font-size: 12px; color: var(--muted); line-height: 1.8; overflow-wrap: anywhere; }
+.admin-paper-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; font-size: 12px; }
+.admin-paper-actions > span { color: var(--muted); }
+.admin-paper-actions button { padding: 8px 12px; min-height: 40px; font-size: 12px; }
+.admin-user { display: grid; gap: 10px; text-align: left; padding: 22px; border-radius: 10px; background: var(--surface); overflow-wrap: anywhere; }
+.admin-user strong { font-weight: 500; }
+.admin-user span, .admin-user small { font-size: 12px; color: var(--muted); }
+.admin-account-title { font-size: 20px; overflow-wrap: anywhere; margin-bottom: 28px; }
+.admin-record { margin-bottom: 32px; }
+.admin-record h3 { font-size: 16px; line-height: 1.7; overflow-wrap: anywhere; }
+.admin-record h3 small, .admin-record-meta { font-size: 12px; font-weight: 400; color: var(--muted); }
+.admin-record-meta { margin: 8px 0 16px; }
+.admin-record .global-note { margin-bottom: 12px; overflow-wrap: anywhere; }
+.admin-empty { padding: 48px 0; text-align: center; color: var(--muted); }
+@media (max-width: 640px) {
+  .admin-shell { padding: 22px 18px 60px; }
+  .admin-header { gap: 18px; }
+  .admin-header h1 { font-size: 21px; }
+  .admin-toolbar .search { flex-basis: 100%; width: 100%; }
+  .admin-paper { display: block; padding: 18px; }
+  .admin-paper-actions { margin-top: 16px; flex-wrap: wrap; }
+  .admin-paper-actions > span { margin-right: auto; }
+}

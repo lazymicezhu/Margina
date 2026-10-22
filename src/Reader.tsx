@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, BookMarked, BookOpen, Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, FileText, Highlighter, Info, Languages, List, LoaderCircle, Maximize2, Minus, NotebookPen, Pencil, Plus, Search, Trash2, Type, X } from 'lucide-react';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { TextLayer } from 'pdfjs-dist';
 import { loadPdf } from './pdf';
 import type { Annotation, Book, Language, MarkColor, Rect, SelectionData } from './types';
 import { notesMarkdown, saveFile } from './storage';
 import { CopyButton, Disclosure, useSpringFeedback } from './interactions';
+import { randomId } from './browser-compat';
+import { pdfBitmapSize } from './pdf-resolution';
 
 const langLabel = (lang: Language) => lang === 'zh' ? '中文' : lang === 'en' ? '英文' : '对照';
 type Props = { book: Book; onBack: () => void; onUpdate: (patch: Partial<Book>) => Promise<void>; notify: (message: string) => void };
 export default function Reader({ book, onBack, onUpdate, notify }: Props) {
   const [page, setPage] = useState(book.page);
   const [language, setLanguage] = useState<Language>(book.bilingual ? 'zh' : 'en');
-  const [mode, setMode] = useState<'flow' | 'pdf'>(book.bundle ? 'flow' : 'pdf');
+  const [mode, setMode] = useState<'flow' | 'pdf'>('pdf');
   const [fontSize, setFontSize] = useState(18);
   const [zoom, setZoom] = useState(1);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -80,7 +82,7 @@ export default function Reader({ book, onBack, onUpdate, notify }: Props) {
   });
   function switchLanguage(lang: Language) { setLanguage(lang); setSelection(null); window.getSelection()?.removeAllRanges(); }
   function draft(data?: SelectionData): Annotation {
-    return { id: crypto.randomUUID(), page, quote: data?.quote || '', text: '', rects: data?.rects || [], language: data?.language || language, segmentId: data?.segmentId, color, created:Date.now(),updated:Date.now() };
+    return { id: randomId(), page, quote: data?.quote || '', text: '', rects: data?.rects || [], language: data?.language || language, segmentId: data?.segmentId, color, created:Date.now(),updated:Date.now() };
   }
   async function saveNote(note: Annotation) {
     setSaving(true);
@@ -130,28 +132,71 @@ function NoteEditor({note,saving,onCancel,onSave}:{note:Annotation;saving:boolea
   return <div className="modal-backdrop"><section className="modal note-editor" role="dialog" aria-modal="true" aria-label="编辑阅读笔记"><div className="editor-heading"><h2>笔记</h2><button className="icon-button" aria-label="取消编辑" onClick={onCancel} disabled={saving}><X size={20}/></button></div><span className="editor-meta">第 {note.page} 页 · {langLabel(note.language)}</span>{note.quote&&<blockquote className={`quote-${color}`}>{note.quote}</blockquote>}<textarea autoFocus aria-label="笔记内容" value={text} onChange={e=>setText(e.target.value)} placeholder="写笔记…" rows={5}/><div className="editor-footer"><div className="swatches">{(['yellow','green','pink'] as MarkColor[]).map(c=><button key={c} aria-label={`${c}笔记颜色`} className={`swatch ${c} ${color===c?'active':''}`} onClick={()=>setColor(c)}/>)}</div><button className="primary-button" disabled={saving||(!text.trim()&&!note.quote)} onClick={()=>onSave({...note,text,color})}>{saving?<LoaderCircle className="spin" size={17}/>:<Check size={17}/>}保存笔记</button></div><p className="fineprint">关闭前请保存。</p></section></div>;
 }
 
+type PdfBitmapRequest = { page: PDFPageProxy; viewport: ReturnType<PDFPageProxy['getViewport']>; width: number };
+
+function PdfBitmap({request,onLoading,onError}:{request:PdfBitmapRequest|null;onLoading:(loading:boolean)=>void;onError:(message:string)=>void}) {
+  const host=useRef<HTMLDivElement>(null);
+  const displayed=useRef<HTMLCanvasElement|null>(null);
+  const previousRequest=useRef<PdfBitmapRequest|null>(null);
+  const readDensity=()=>Math.max(1,window.devicePixelRatio||1)*Math.max(1,window.visualViewport?.scale||1);
+  const [density,setDensity]=useState(readDensity);
+  useEffect(()=>{
+    let timer:ReturnType<typeof setTimeout>;
+    const update=()=>{clearTimeout(timer);timer=setTimeout(()=>setDensity(readDensity()),180);};
+    window.addEventListener('resize',update);
+    window.visualViewport?.addEventListener('resize',update);
+    return()=>{clearTimeout(timer);window.removeEventListener('resize',update);window.visualViewport?.removeEventListener('resize',update);};
+  },[]);
+  useEffect(()=>{
+    if(!request)return;
+    let disposed=false;
+    const canvas=document.createElement('canvas');
+    const size=pdfBitmapSize(request.width,request.viewport.height,density);
+    canvas.width=size.width;canvas.height=size.height;
+    canvas.style.width=`${request.width}px`;canvas.style.height=`${request.viewport.height}px`;
+    // Density changes update only the bitmap, preserving text selection and highlights.
+    if(previousRequest.current!==request||!displayed.current)onLoading(true);
+    previousRequest.current=request;
+    const render=request.page.render({canvas,viewport:request.viewport,transform:[size.scaleX,0,0,size.scaleY,0,0]});
+    render.promise.then(()=>{
+      if(disposed)return;
+      const old=displayed.current;
+      host.current?.replaceChildren(canvas);displayed.current=canvas;
+      if(old){old.width=0;old.height=0;}
+      onLoading(false);
+    }).catch(e=>{
+      if(!disposed&&e?.name!=='RenderingCancelledException'){
+        onError('PDF 渲染失败，请尝试重新打开文献。');onLoading(false);
+      }
+    }).finally(()=>{if(displayed.current!==canvas){canvas.width=0;canvas.height=0;}});
+    return()=>{disposed=true;render.cancel();};
+  },[request,density,onLoading,onError]);
+  useEffect(()=>()=>{const canvas=displayed.current;if(canvas){canvas.width=0;canvas.height=0;}},[]);
+  return <div className="pdf-bitmap" ref={host}/>;
+}
+
 function PdfPage({pdf,page,language,bilingual,zoom,annotations,onSelection,onError}:{pdf:PDFDocumentProxy;page:number;language:Language;bilingual:boolean;zoom:number;annotations:Annotation[];onSelection:(data:SelectionData)=>void;onError:(s:string)=>void}) {
-  const host=useRef<HTMLDivElement>(null); const surface=useRef<HTMLDivElement>(null);
+  const host=useRef<HTMLDivElement>(null); const surface=useRef<HTMLDivElement>(null); const textHost=useRef<HTMLDivElement>(null);
+  const [bitmap,setBitmap]=useState<PdfBitmapRequest|null>(null); const [bitmapLoading,setBitmapLoading]=useState(true);
   const [width,setWidth]=useState(600); const [geometry,setGeometry]=useState({width:600,height:800,fullWidth:600,offset:0}); const [loading,setLoading]=useState(true);
   const geometryRef=useRef(geometry); geometryRef.current=geometry;
   useEffect(()=>{const el=host.current!;const observer=new ResizeObserver(entries=>setWidth(Math.max(250,entries[0].contentRect.width)));observer.observe(el);return()=>observer.disconnect();},[]);
   useEffect(()=>{
-    let disposed=false; let render: ReturnType<Awaited<ReturnType<PDFDocumentProxy['getPage']>>['render']>|undefined;let textLayer:TextLayer|undefined;
-    const root=surface.current!;root.replaceChildren();setLoading(true);
+    let disposed=false;let textLayer:TextLayer|undefined;
+    const root=textHost.current!;root.replaceChildren();setLoading(true);
     (async()=>{
       const p=await pdf.getPage(page);if(disposed)return;
       const raw=p.getViewport({scale:1});const split=bilingual&&language!=='both';const sourceWidth=split?raw.width/2:raw.width;
       const scale=width*zoom/sourceWidth; const offset=split&&language==='zh'?raw.width*scale/2:0;
       const viewport=p.getViewport({scale,offsetX:-offset});const outWidth=sourceWidth*scale;
       const newGeometry={width:outWidth,height:viewport.height,fullWidth:raw.width*scale,offset};setGeometry(newGeometry);
-      const canvas=document.createElement('canvas');const ratio=Math.min(window.devicePixelRatio||1,2);
-      canvas.width=Math.ceil(outWidth*ratio);canvas.height=Math.ceil(viewport.height*ratio);canvas.style.width=`${outWidth}px`;canvas.style.height=`${viewport.height}px`;
+      setBitmap({page:p,viewport,width:outWidth});
       const text=document.createElement('div');text.className='textLayer';text.style.setProperty('--scale-factor',String(scale));text.style.setProperty('--total-scale-factor',String(scale));
       root.style.setProperty('--scale-factor',String(scale));root.style.setProperty('--total-scale-factor',String(scale));
-      root.append(canvas,text);render=p.render({canvas,viewport,transform:[ratio,0,0,ratio,0,0]});await render.promise;if(disposed)return;
+      root.append(text);
       textLayer=new TextLayer({textContentSource:await p.getTextContent(),container:text,viewport:p.getViewport({scale})});text.style.width=`${raw.width*scale}px`;text.style.height=`${viewport.height}px`;text.style.transform=`translateX(-${offset}px)`;await textLayer.render();if(!disposed)setLoading(false);
     })().catch(e=>{if(!disposed&&e?.name!=='RenderingCancelledException'&&e?.name!=='AbortException'){onError('PDF 渲染失败，请尝试重新打开文献。');setLoading(false);}});
-    return()=>{disposed=true;render?.cancel();textLayer?.cancel();};
+    return()=>{disposed=true;textLayer?.cancel();};
   },[pdf,page,width,zoom,language,bilingual]);
   useEffect(()=>{
     let timer:ReturnType<typeof setTimeout>;
@@ -163,5 +208,5 @@ function PdfPage({pdf,page,language,bilingual,zoom,annotations,onSelection,onErr
       if(rects.length)onSelection({quote,rects,page,language});
     },200);};document.addEventListener('selectionchange',capture);return()=>{document.removeEventListener('selectionchange',capture);clearTimeout(timer);};
   },[page,language,onSelection]);
-  return <div className="pdf-width-host" ref={host}><div className="pdf-overflow"><div className="pdf-stage" style={{width:geometry.width,height:geometry.height}}><div ref={surface} className="pdf-surface" style={{width:geometry.width,height:geometry.height}}/><div className="pdf-highlights" aria-hidden="true">{annotations.flatMap(n=>n.rects.map((r,i)=><div className={`pdf-highlight ${n.color}`} key={`${n.id}-${i}`} style={{left:r.x*geometry.fullWidth-geometry.offset,top:r.y*geometry.height,width:r.width*geometry.fullWidth,height:r.height*geometry.height}}/>))}</div>{loading&&<div className="pdf-loading"><LoaderCircle className="spin" size={22}/></div>}</div></div></div>;
+  return <div className="pdf-width-host" ref={host}><div className="pdf-overflow"><div className="pdf-stage" style={{width:geometry.width,height:geometry.height}}><div ref={surface} className="pdf-surface" style={{width:geometry.width,height:geometry.height}}><PdfBitmap request={bitmap} onLoading={setBitmapLoading} onError={onError}/><div ref={textHost}/></div><div className="pdf-highlights" aria-hidden="true">{annotations.flatMap(n=>n.rects.map((r,i)=><div className={`pdf-highlight ${n.color}`} key={`${n.id}-${i}`} style={{left:r.x*geometry.fullWidth-geometry.offset,top:r.y*geometry.height,width:r.width*geometry.fullWidth,height:r.height*geometry.height}}/>))}</div>{(loading||bitmapLoading)&&<div className="pdf-loading"><LoaderCircle className="spin" size={22}/></div>}</div></div></div>;
 }

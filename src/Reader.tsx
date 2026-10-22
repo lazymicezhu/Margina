@@ -9,6 +9,7 @@ import { notesMarkdown, saveFile } from './storage';
 import { CopyButton, Disclosure, useSpringFeedback } from './interactions';
 import { randomId } from './browser-compat';
 import { pdfBitmapSize } from './pdf-resolution';
+import { usePageSwipe } from './usePageSwipe';
 
 const langLabel = (lang: Language) => lang === 'zh' ? '中文' : lang === 'en' ? '英文' : '对照';
 type Props = { book: Book; pdfSource?: PdfSource; onBack: () => void; onUpdate: (patch: Partial<Book>) => Promise<void>; onReload?: () => Promise<void>; notify: (message: string) => void };
@@ -102,6 +103,7 @@ export default function Reader({ book, pdfSource, onBack, onUpdate, onReload, no
     };
     document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey);
   });
+  usePageSwipe(scroller, !editor && !help && !deleting && !panel && !selection && (mode === 'flow' || (!!pdf && !pdfError && zoom <= 1)), page, direction => changePage(page + direction));
   function switchLanguage(lang: Language) { setLanguage(lang); setSelection(null); window.getSelection()?.removeAllRanges(); }
   function draft(data?: SelectionData): Annotation {
     return { id: randomId(), page, quote: data?.quote || '', text: '', rects: data?.rects || [], language: data?.language || language, segmentId: data?.segmentId, color, created:Date.now(),updated:Date.now() };

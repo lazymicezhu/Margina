@@ -3,10 +3,11 @@ import { ArrowDownToLine, ArrowRight, BookOpen, Check, ChevronRight, Cloud, Fold
 import type { Book } from './types';
 import type { AccountState, Paper, ReadingData, Session } from './cloud-types';
 import { emptyReading } from './cloud-types';
-import { api, cachePaper, cachedPdfValid, catalog, getPaper, jsonOptions, session, uploadBundle, uploadPdf } from './cloud-api';
+import { api, cachePaper, catalog, getPaper, jsonOptions, session, uploadBundle, uploadPdf } from './cloud-api';
+import { readCachedPdf, type PdfSource } from './pdf-source';
 import { editReading, readAccount, syncAccount } from './sync';
 import { mergeReading } from './sync-merge';
-import { listBooks, notesMarkdown, patchBook, saveFile, setting } from './storage';
+import { getBook, listBooks, notesMarkdown, patchBook, saveFile, setting } from './storage';
 import { makeBook } from './pdf';
 import Reader from './Reader';
 import AdminPanel from './AdminPanel';
@@ -46,6 +47,7 @@ export default function App() {
   const [files, setFiles] = useState<File[]>([]);
   const [publicConsent, setPublicConsent] = useState(false);
   const [active, setActive] = useState<Book | null>(null);
+  const [pdfSource, setPdfSource] = useState<PdfSource>();
   const [withdraw, setWithdraw] = useState<Paper | null>(null);
   const [removeShelf, setRemoveShelf] = useState<Paper | null>(null);
   const userRef = useRef(current.user); userRef.current = current.user;
@@ -101,7 +103,7 @@ export default function App() {
   }
   useEffect(() => { void refreshSession(); void listBooks().then(setCached).catch(error => notify(problem(error))); }, []);
   useEffect(() => {
-    setActive(null); setAccount(freshAccount()); setSyncError(''); setSyncing(false); setPaused(false);
+    setActive(null); setPdfSource(undefined); setAccount(freshAccount()); setSyncError(''); setSyncing(false); setPaused(false);
     if (!accountId) return;
     let cancelled = false;
     void setting(`sync-paused:${accountId}`).then(value => { if (!cancelled) { setPaused(value === true); if (value !== true) void syncNow(accountId); } });
@@ -167,16 +169,27 @@ export default function App() {
     await run('正在打开文献…', async () => {
       const id = userRef.current?.id;
       let book: Book;
-      try { book = await cachePaper(paper); }
-      catch (error) { const local = (await listBooks()).find(b => b.id === paper.id); if (!local || !(await cachedPdfValid(local))) throw error; book = local; notify('正在阅读本机缓存，未能获取最新阅读包。'); }
+      let source: PdfSource;
+      try { ({ book, source } = await cachePaper(paper)); }
+      catch (error) {
+        const local = await getBook(paper.id);
+        const bytes = local && await readCachedPdf(local);
+        if (!local || !bytes) throw error;
+        book = local; source = { bytes };
+        notify('正在阅读本机缓存，未能获取最新阅读包。');
+      }
       if (userRef.current?.id !== id) return;
-      setCached(await listBooks());
+      setCached(current => [...current.filter(item => item.id !== book.id), book]);
       if (id) {
         await editReading(id, book.id, { opened: Date.now() });
         const state = await readAccount(id);
+        if (userRef.current?.id !== id) return;
+        setPdfSource(source);
         setActive({ ...book, ...state.records[book.id].data });
       } else {
-        await patchBook(book.id, { opened: Date.now() }); setActive({ ...book, opened: Date.now() });
+        await patchBook(book.id, { opened: Date.now() });
+        if (userRef.current?.id !== id) return;
+        setPdfSource(source); setActive({ ...book, opened: Date.now() });
       }
     });
   }
@@ -185,8 +198,9 @@ export default function App() {
     if (!activeBook) return;
     const userId = userRef.current?.id;
     await run('正在重新加载 PDF…', async () => {
-      const book = await cachePaper(await getPaper(activeBook.id), true);
-      if (userRef.current?.id !== userId) return;
+      const { book, source } = await cachePaper(await getPaper(activeBook.id), true);
+      if (userRef.current?.id !== userId || activeRef.current?.id !== activeBook.id) return;
+      setPdfSource(source);
       setActive(current => current?.id === book.id ? { ...current, blob: book.blob, cover: book.cover } : current);
     });
   }
@@ -275,7 +289,7 @@ export default function App() {
   const closeAdmin = () => { setAdminOpen(false); history.replaceState(null, '', '/'); void refreshCatalog(); };
 
   return <>
-    {active ? <Reader key={`${accountId || 'guest'}:${active.id}`} book={active} onBack={() => { setActive(null); void listBooks().then(setCached); }} onUpdate={updateReading} onReload={reloadActivePdf} notify={notify} /> :
+    {active ? <Reader key={`${accountId || 'guest'}:${active.id}`} book={active} pdfSource={pdfSource} onBack={() => { setActive(null); setPdfSource(undefined); void listBooks().then(setCached); }} onUpdate={updateReading} onReload={reloadActivePdf} notify={notify} /> :
       adminOpen ? current.user?.admin ? <AdminPanel key={accountId} user={current.user} revision={adminRevision} onClose={closeAdmin} onUpload={() => setUpload(true)} onChanged={() => { setKnown({}); void refreshCatalog(); }} /> : <main className="admin-shell"><button className="text-button" onClick={closeAdmin}><ArrowRight size={17} />返回书库</button><div className="empty-state"><h1>管理后台</h1>{current.user ? <p>需要管理员权限</p> : <button className="primary-button" onClick={() => setLogin(true)}>登录</button>}</div></main> :
       <div className="app-shell cloud-shell">
         <aside className="sidebar"><Logo /><nav aria-label="主导航">

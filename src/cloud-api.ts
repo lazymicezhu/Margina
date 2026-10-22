@@ -1,9 +1,10 @@
 import type { Paper, Session } from './cloud-types';
 import type { Book } from './types';
 import { validateBundle } from './bundle';
-import { listBooks, putBook, patchBook, setting } from './storage';
+import { getBook, putBook, patchBook, setting } from './storage';
 import { makeBook } from './pdf';
 import { sha256 } from './browser-compat';
+import { readCachedPdf, type PdfSource } from './pdf-source';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public body?: unknown) { super(message); }
@@ -31,31 +32,33 @@ export async function uploadBundle(file: File, user: string) {
   const options = jsonOptions('PUT', bundle);
   return api<{ paper: Paper }>(`/api/private/papers/${bundle.pdfSha256}/bundle`, { ...options, headers: { ...options.headers, 'X-Margina-User': user, 'X-Public-Upload': 'confirmed' } });
 }
-export async function cachedPdfValid(book: Book): Promise<boolean> {
-  try {
-    return book.blob instanceof Blob && book.blob.size === book.size &&
-      await sha256(await book.blob.arrayBuffer()) === book.id;
-  } catch { return false; }
-}
 // File blobs are shared locally; repairing them must preserve guest records too.
-export async function cachePaper(paper: Paper, forceDownload = false): Promise<Book> {
-  let book = (await listBooks()).find(b => b.id === paper.id);
-  if (!book || forceDownload || !(await cachedPdfValid(book))) {
+export async function cachePaper(paper: Paper, forceDownload = false): Promise<{ book: Book; source: PdfSource }> {
+  let book = await getBook(paper.id);
+  let bytes = book && !forceDownload ? await readCachedPdf(book) : null;
+  if (!book || !bytes) {
     const response = await fetch(`/api/papers/${paper.id}/pdf`, { cache: 'no-store' });
     if (!response.ok) throw new Error('PDF 加载失败，请重试');
-    const fresh = await makeBook(await response.blob(), paper.fileName);
-    if (fresh.id !== paper.id || fresh.pages !== paper.pages) throw new Error('PDF 校验失败，请联系上传者');
+    bytes = await response.arrayBuffer();
+    if (bytes.byteLength !== paper.size || await sha256(bytes) !== paper.id) throw new Error('PDF 校验失败，请联系上传者');
+    const blob = new Blob([bytes], { type: 'application/pdf' });
     if (book) {
-      const files = { blob: fresh.blob, size: fresh.size, pages: fresh.pages, cover: fresh.cover, fileName: fresh.fileName };
+      const files = { blob, size: paper.size, pages: paper.pages, fileName: paper.fileName };
       await patchBook(book.id, files);
       book = { ...book, ...files };
     } else {
-      book = fresh;
+      // Only first import needs a thumbnail/metadata parse. Keep the verified
+      // buffer for the reader; makeBook uses its own transferable buffer.
+      book = await makeBook(blob, paper.fileName);
+      if (book.pages !== paper.pages) throw new Error('PDF 校验失败，请联系上传者');
       await putBook(book);
     }
   }
   const revision = await setting(`public-bundle:${paper.id}`);
-  const metadata: Partial<Book> = { title: paper.title, author: paper.author, bilingual: paper.bilingual };
+  const metadata: Partial<Book> = {};
+  if (book.title !== paper.title) metadata.title = paper.title;
+  if (book.author !== paper.author) metadata.author = paper.author;
+  if (book.bilingual !== paper.bilingual) metadata.bilingual = paper.bilingual;
   if (paper.hasBundle && revision !== paper.updated) {
     const response = await fetch(`/api/papers/${paper.id}/bundle`);
     if (!response.ok) throw new Error('阅读包加载失败，请重试');
@@ -63,7 +66,7 @@ export async function cachePaper(paper: Paper, forceDownload = false): Promise<B
     if (bundle.pdfSha256 !== paper.id || bundle.pageCount !== paper.pages) throw new Error('阅读包与 PDF 不匹配');
     metadata.bundle = bundle;
   }
-  await patchBook(book.id, metadata);
+  if (Object.keys(metadata).length) await patchBook(book.id, metadata);
   if (metadata.bundle) await setting(`public-bundle:${paper.id}`, paper.updated);
-  return { ...book, ...metadata };
+  return { book: { ...book, ...metadata }, source: { bytes } };
 }

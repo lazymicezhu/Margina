@@ -3,6 +3,7 @@ import { ArrowDownToLine, ArrowLeft, ArrowRight, BookMarked, BookOpen, Bookmark,
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { loadPdf } from './pdf';
+import type { PdfSource } from './pdf-source';
 import type { Annotation, Book, Language, MarkColor, Rect, SelectionData } from './types';
 import { notesMarkdown, saveFile } from './storage';
 import { CopyButton, Disclosure, useSpringFeedback } from './interactions';
@@ -10,8 +11,8 @@ import { randomId } from './browser-compat';
 import { pdfBitmapSize } from './pdf-resolution';
 
 const langLabel = (lang: Language) => lang === 'zh' ? '中文' : lang === 'en' ? '英文' : '对照';
-type Props = { book: Book; onBack: () => void; onUpdate: (patch: Partial<Book>) => Promise<void>; onReload?: () => Promise<void>; notify: (message: string) => void };
-export default function Reader({ book, onBack, onUpdate, onReload, notify }: Props) {
+type Props = { book: Book; pdfSource?: PdfSource; onBack: () => void; onUpdate: (patch: Partial<Book>) => Promise<void>; onReload?: () => Promise<void>; notify: (message: string) => void };
+export default function Reader({ book, pdfSource, onBack, onUpdate, onReload, notify }: Props) {
   const [page, setPage] = useState(book.page);
   const [language, setLanguage] = useState<Language>(book.bilingual ? 'zh' : 'en');
   const [mode, setMode] = useState<'flow' | 'pdf'>('pdf');
@@ -42,19 +43,25 @@ export default function Reader({ book, onBack, onUpdate, onReload, notify }: Pro
   useEffect(() => {
     let cancelled = false;
     let task: ReturnType<typeof loadPdf> | undefined;
+    let stage = 'read';
     setPdf(null); setPdfError('');
-    book.blob.arrayBuffer().then(bytes => {
+    const data = pdfSource?.bytes ? Promise.resolve(pdfSource.bytes) : book.blob.arrayBuffer();
+    data.then(bytes => {
       if (cancelled) return;
+      stage = 'parse';
+      // Transfer the already verified bytes, without rereading an IndexedDB
+      // Blob after metadata/progress writes. Do not retain a detached buffer.
+      if (pdfSource) pdfSource.bytes = undefined;
       task = loadPdf(bytes);
       return task.promise.then(doc => { if (!cancelled) setPdf(doc); });
     }).catch(error => {
       if (!cancelled) {
-        console.warn('PDF document loading failed', error);
+        console.warn(`PDF document ${stage} failed`, error);
         setPdfError(error?.name === 'PasswordException' ? '这份 PDF 需要密码。' : 'PDF 加载失败，请重试。');
       }
     });
     return () => { cancelled = true; void task?.destroy().catch(() => {}); };
-  }, [book.id, book.blob, loadAttempt]);
+  }, [book.id, book.blob, pdfSource, loadAttempt]);
   async function retryPdf() {
     setRetrying(true);
     try {

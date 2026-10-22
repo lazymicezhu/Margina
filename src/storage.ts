@@ -21,6 +21,14 @@ export async function listBooks(): Promise<Book[]> {
     req.onerror = () => reject(req.error);
   });
 }
+export async function getBook(id: string): Promise<Book | undefined> {
+  const database = await db();
+  return new Promise((resolve, reject) => {
+    const req = database.transaction('books').objectStore('books').get(id);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
 export async function putBook(book: Book) {
   const database = await db();
   return new Promise<void>((resolve, reject) => {

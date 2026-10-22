@@ -1,6 +1,6 @@
 # Cloudflare 部署与管理后台
 
-使用 Workers 托管网页和接口、D1 保存账号与笔记、R2 保存 PDF / JSON。无需先运行本地预览，也不需要推送 GitHub。当前公共网站为 https://margina.2644860482.workers.dev，Worker、D1 和私有 R2 已部署。Zero Trust Free 与邮箱验证码登录已启用；登录有效期为 24 小时，仅保护 `/api/private/*`。当前允许登录的邮箱为已配置的管理员邮箱，新增账号需加入 Access Allow 策略。
+使用 Workers 托管网页和接口、D1 保存账号与笔记、R2 保存 PDF / JSON。无需先运行本地预览，也不需要推送 GitHub。当前公共网站为 https://margina.lazymicezhu.com，Worker、D1 和私有 R2 已部署。Zero Trust Free 与邮箱验证码登录已启用；登录有效期为 24 小时，仅保护 `/api/private/*`。当前允许登录的邮箱为已配置的管理员邮箱，新增账号需加入 Access Allow 策略。
 
 ## 1. 准备 Cloudflare
 
@@ -32,6 +32,7 @@ npm run deploy:cloud
 进入 **Zero Trust → Access → Applications → Add an application → Self-hosted**，创建 `Margina 登录`：
 
 - 应用域名使用刚发布的网站主机名；Path 填 `api/private/*`。
+- 使用自定义域名时，必须将该主机名的 `api/private/*` 路径加入同一个 Access 应用。当前已配置 `margina.lazymicezhu.com/api/private/*` 和 `margina.2644860482.workers.dev/api/private/*`，共用同一 AUD；仅绑定 Worker 自定义域名不会自动添加 Access 登录保护。
 - 使用基于域名和路径的应用，仅保护 `/api/private/*`。不要使用覆盖整个 Worker 的 “Protect this Worker” 开关，否则公开书库也会要求登录。
 - 登录方式启用 **One-time PIN**（邮箱验证码）。
 - 添加 **Allow** 策略，先在 **Emails** 中填你的邮箱及需要登录的其他用户邮箱。后续可以在此增删允许登录的邮箱。

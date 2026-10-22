@@ -6,7 +6,7 @@
 
 优先适配手机网页的双语学术文献阅读器，将高亮、笔记和阅读进度保存在浏览器中。Margina 复用 `academic-pdf-bilingual` / BabelDOC 工作流的最终 PDF、翻译片段和术语表，本身不翻译文献，不需要 AI API 密钥。
 
-> **v0.1.0。** 已实现公共书库、账号同步及管理后台，可按 [部署步骤](docs/CLOUDFLARE.md) 直接发布到 Cloudflare Workers / D1 / R2，无需先启动本地预览或推送 Git。[公共网站](https://margina.2644860482.workers.dev) 已部署，D1 和私有 R2 已连接；邮箱验证码登录与管理后台已启用。
+> **v0.1.0。** 已实现公共书库、账号同步及管理后台，可按 [部署步骤](docs/CLOUDFLARE.md) 直接发布到 Cloudflare Workers / D1 / R2，无需先启动本地预览或推送 Git。[公共网站](https://margina.lazymicezhu.com) 已部署，D1 和私有 R2 已连接；邮箱验证码登录与管理后台已启用。
 
 ## 功能
 

@@ -1,3 +1,4 @@
+import { shelfAccess, shelfRequest } from './shelf.mjs';
 import { parseTxt, TXT_MAX_BYTES } from '../src/txt.ts';
 import { identity, localAuth, authConfigured, devCookie } from './auth.mjs';
 import { check, readJson, readBytes, readingData } from './validation.mjs';
@@ -87,27 +88,32 @@ export default {
       check(user, '请先登录，再进行此操作', 401);
       if (request.headers.has('x-margina-user')) check(request.headers.get('x-margina-user') === user.id, '登录账号已变化，请刷新页面', 401);
       await rememberUser(env, user);
+      if (path.startsWith('/api/private/admin/')) return await adminRequest(request, env, user, { json, publicPaper, publicRecord, discard });
+      const shelf = await shelfAccess(request, env, user);
+      if (path.startsWith('/api/private/shelf')) return await shelfRequest(request, env, user, shelf, json);
       const privateFile = path.match(/^\/api\/private\/files\/([a-f0-9]{64})(?:\/(file|bundle))?$/);
       if (privateFile && ['GET', 'HEAD'].includes(request.method)) {
+        shelf.requireBook(privateFile[1]);
         const paper = await getPaper(env, privateFile[1]);
         check(canRead(paper, user) && !paper.removed, '文献不存在或不可访问', 404);
         return privateFile[2] ? fileResponse(request, env, paper, privateFile[2]) : json(publicPaper(paper));
       }
-      if (path.startsWith('/api/private/admin/')) return await adminRequest(request, env, user, { json, publicPaper, publicRecord, discard });
+
       if (path === '/api/private/login' && request.method === 'GET') return Response.redirect(`${url.origin}${url.searchParams.get('next') === '/admin' ? '/admin' : '/'}`, 302);
       if (path === '/api/private/uploads' && request.method === 'GET') {
         const { results } = await env.DB.prepare('SELECT * FROM papers WHERE owner = ? AND removed <> 2 ORDER BY created DESC LIMIT 200').bind(user.id).all();
-        return json({ papers: results.map(publicPaper) });
+        return json({ papers: results.filter(p => !shelf.blockedBooks.has(p.id)).map(publicPaper) });
       }
       if (path === '/api/private/records' && request.method === 'GET') {
         const cursor = Number(url.searchParams.get('after') || 0);
         check(Number.isSafeInteger(cursor) && cursor >= 0, '同步游标不正确');
         const { results } = await env.DB.prepare('SELECT * FROM reading WHERE user_id = ? AND seq > ? ORDER BY seq LIMIT 11').bind(user.id, cursor).all();
         const rows = results.slice(0, 10);
-        return json({ records: rows.map(publicRecord), cursor: rows.at(-1)?.seq || cursor, more: results.length > 10 });
+        return json({ records: rows.filter(r => !shelf.blockedBooks.has(r.book_id)).map(publicRecord), cursor: rows.at(-1)?.seq || cursor, more: results.length > 10 });
       }
       const recordMatch = path.match(/^\/api\/private\/records\/([a-f0-9]{64})$/);
       if (recordMatch && request.method === 'PUT') {
+        shelf.requireBook(recordMatch[1]);
         const body = await readJson(request);
         check(Number.isSafeInteger(body.version) && body.version >= 0, '同步版本不正确');
         const paper = await getPaper(env, recordMatch[1]);
@@ -126,6 +132,7 @@ export default {
         const visibility = request.headers.get('x-paper-visibility') || 'public';
         check(['public', 'private'].includes(visibility), '可见范围不正确');
         const id = request.method === 'PUT' && visibility === 'private' ? await privateId(user.id, hash) : hash;
+        shelf.requireBook(id);
         const paper = await getPaper(env, id);
         if (request.method === 'DELETE' && !uploadMatch[2]) {
           check(paper && (paper.owner === user.id || user.admin), '只有上传者或管理员可以撤下文献', 403);

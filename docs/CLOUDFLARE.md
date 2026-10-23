@@ -127,3 +127,14 @@ npm run deploy:cloud
 该迁移只新增 content_hash 和 visibility 两列，既有文献保持公开，不改动文件、笔记或进度。可先用 `PRAGMA table_info(papers)` 检查是否已执行，避免重复添加列。新增私密文件后，不要回退到没有可见范围校验的旧 Worker。
 
 上传默认私密，公开上传需明确勾选确认。PDF/TXT 上传后自动进入个人书架；配套 JSON 选择与 PDF 相同的可见范围。同一文件可分别公开或在各账号私密保存，互不转换或混用阅读记录；独立副本分别计入存储预算。私密文件仍纳入既有管理员管理权限。
+
+### 已有部署升级：书架文件夹与书名备注
+
+已部署私密 TXT 版本的数据库先执行本次增量迁移，再发布代码；不要重复执行旧的 `0001-private-text.sql`：
+
+```sh
+node node_modules/wrangler/bin/wrangler.js d1 execute margina --remote --file server/migrations/0002-shelf-folders.sql --config wrangler.production.jsonc
+npm run deploy:cloud
+```
+
+全新部署的 `server/schema.sql` 已包含这些表。此升级不修改已有文献、笔记或浏览器 IndexedDB 版本。文件夹访问控制和缓存边界见 [架构说明](ARCHITECTURE.md#shelf-folders-and-title-remarks)。

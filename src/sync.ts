@@ -1,3 +1,4 @@
+import { bookLocked } from './shelf-lock';
 import type { AccountState, LocalRecord, ReadingData, RemoteRecord } from './cloud-types';
 import { emptyReading } from './cloud-types';
 import { setting, updateSetting } from './storage';
@@ -45,6 +46,7 @@ export function syncAccount(user: string) {
     }
     const ids = Object.keys((await readAccount(user)).records);
     for (const id of ids) {
+      if (bookLocked(id)) continue;
       for (let attempt = 0; attempt < 4; attempt++) {
         const sent = (await readAccount(user)).records[id];
         if (!sent?.dirty) break;
@@ -58,6 +60,7 @@ export function syncAccount(user: string) {
             return { ...latest, records: { ...latest.records, [id]: { version: result.record.version, base: result.record.data, data, dirty: !equalReading(data, result.record.data) } } };
           });
         } catch (error) {
+          if (error instanceof ApiError && error.status === 423) break;
           if (!(error instanceof ApiError) || error.status !== 409) throw error;
           const record = (error.body as { record: RemoteRecord }).record;
           await change(user, latest => ({ ...latest, records: { ...latest.records, [id]: accept(latest.records[id], record) } }));
@@ -66,7 +69,7 @@ export function syncAccount(user: string) {
       }
     }
     const finalState = await readAccount(user);
-    if (Object.values(finalState.records).some(record => record.dirty)) throw new Error('仍有本机修改等待同步，请稍后重试。');
+    if (Object.entries(finalState.records).some(([id, record]) => record.dirty && !bookLocked(id))) throw new Error('仍有本机修改等待同步，请稍后重试。');
     await change(user, state => ({ ...state, lastSynced: Date.now() }));
   };
   const promise = (async () => { if (navigator.locks) await navigator.locks.request(`margina-sync:${user}`, work); else await work(); })()
@@ -74,3 +77,5 @@ export function syncAccount(user: string) {
   running.set(user, promise);
   return promise;
 }
+
+export async function resetReadingCursor(user: string) { await running.get(user)?.catch(() => {}); await change(user, state => ({ ...state, cursor: 0 })); }

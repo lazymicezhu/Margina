@@ -42,6 +42,7 @@ async function setup({ broken = false, unreadable = false, changed = false, badD
       setting: async () => undefined,
     },
     './pdf-source': { readCachedPdf },
+    './shelf-lock': { shelfHeaders: () => ({ 'X-Shelf-Unlock': 'synthetic-test-token' }) },
     './browser-compat': { sha256 },
     './pdf': { makeBook: async () => { throw Error('Existing PDF must not be reparsed for a cover'); } },
     './bundle': {},
@@ -90,6 +91,7 @@ test('broken cache downloads once, preserves notes/progress/cover, and next open
   await s.cachePaper(s.paper);
   assert.equal(s.requests.length, 1);
   assert.equal(s.requests[0].options.cache, 'no-store');
+  assert.equal(s.requests[0].options.headers['X-Shelf-Unlock'], 'synthetic-test-token');
 });
 
 test('wrong downloaded bytes never replace an existing record', async () => {

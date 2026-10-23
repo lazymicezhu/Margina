@@ -1,3 +1,4 @@
+import { shelfHeaders } from './shelf-lock';
 import type { Paper, Session } from './cloud-types';
 import type { Book } from './types';
 import { validateBundle } from './bundle';
@@ -11,7 +12,7 @@ export class ApiError extends Error {
   constructor(message: string, public status: number, public body?: unknown) { super(message); }
 }
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, { ...options, credentials: 'same-origin', redirect: 'error', cache: 'no-store' });
+  const response = await fetch(path, { ...options, headers: { ...shelfHeaders(), ...options.headers }, credentials: 'same-origin', redirect: 'error', cache: 'no-store' });
   if (!response.headers.get('content-type')?.includes('application/json')) throw new ApiError('服务连接失败，请刷新页面或重新登录。', response.status);
   const body = await response.json();
   if (!response.ok) throw new ApiError(body.error || '请求失败，请重试', response.status, body);
@@ -42,7 +43,7 @@ export async function cachePaper(paper: Paper, forceDownload = false): Promise<{
   let book = await getBook(paper.id);
   let bytes = book && !forceDownload ? await readCachedPdf(book) : null;
   if (!book || !bytes) {
-    const response = await fetch(fileUrl(paper, 'file'), { cache: 'no-store', redirect: 'error', credentials: 'same-origin' });
+    const response = await fetch(fileUrl(paper, 'file'), { headers: shelfHeaders(), cache: 'no-store', redirect: 'error', credentials: 'same-origin' });
     if (!response.ok) throw new Error('文件加载失败，请重试');
     bytes = await response.arrayBuffer();
     if (bytes.byteLength !== paper.size || await sha256(bytes) !== (paper.contentHash || paper.id)) throw new Error('文件校验失败，请联系上传者');
@@ -70,7 +71,7 @@ export async function cachePaper(paper: Paper, forceDownload = false): Promise<{
   if (book.author !== paper.author) metadata.author = paper.author;
   if (book.bilingual !== paper.bilingual) metadata.bilingual = paper.bilingual;
   if (paper.hasBundle && revision !== paper.updated) {
-    const response = await fetch(fileUrl(paper, 'bundle'), { redirect: 'error', credentials: 'same-origin' });
+    const response = await fetch(fileUrl(paper, 'bundle'), { headers: shelfHeaders(), redirect: 'error', credentials: 'same-origin' });
     if (!response.ok) throw new Error('阅读包加载失败，请重试');
     const bundle = validateBundle(await response.json());
     if (bundle.pdfSha256 !== (paper.contentHash || paper.id) || bundle.pageCount !== paper.pages) throw new Error('阅读包与 PDF 不匹配');

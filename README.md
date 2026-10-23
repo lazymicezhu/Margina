@@ -10,6 +10,9 @@ A mobile-first web reader for bilingual academic papers, with highlights, notes,
 
 ## Features
 
+- Open on the personal shelf by default. Create account-synced folders, optionally password-protected, and organize books through each shelf card’s edit button. A personal title remark replaces the displayed title on your shelf and in the reader; clearing it restores the original. Original filenames and public catalog titles stay unchanged.
+- Protected folders require their password after a page refresh. Folder locks guard personal notes, private file access and shelf edits; public library copies remain public. Deleting an unlocked folder moves its books to the shelf root.
+
 - Browse and read the public library without signing in. Signed-in users can upload PDF / TXT files and matching PDF reading bundles, choosing private (default) or public visibility. Uploaded documents join the personal shelf.
 - Shelf cards have an explicit removal action; recently read books appear first. Completed administrator deletions disappear from library management and upload lists; interrupted deletions remain available to retry.
 - Separate each account’s notes, highlights, bookmarks and progress; synchronize changes with version checks, conflict copies, deletion tracking and a persistent local queue. Removing a shelf item preserves notes and the public file.

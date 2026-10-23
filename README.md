@@ -16,7 +16,7 @@ A mobile-first web reader for bilingual academic papers, with highlights, notes,
 - Browse and read the public library without signing in. Signed-in users can upload PDF / TXT files and matching PDF reading bundles, choosing private (default) or public visibility. Uploaded documents join the personal shelf.
 - Shelf cards have an explicit removal action; recently read books appear first. Completed administrator deletions disappear from library management and upload lists; interrupted deletions remain available to retry.
 - Separate each account’s notes, highlights, bookmarks and progress; synchronize changes with version checks, conflict copies, deletion tracking and a persistent local queue. Removing a shelf item preserves notes and the public file.
-- Retain the original local-only library under Settings → Local documents; existing files are never automatically published.
+- Settings omits local-library import, guest-record merging and the upload-management shortcut. My uploads remains in desktop and mobile navigation; existing browser data is preserved.
 
 - Read TXT (up to 10 MB, UTF-8 / BOM-marked UTF-16 / GB18030) with adjustable font size, fixed pagination, swipe navigation, excerpts, notes and synced progress. Text is rendered as plain text, never HTML. TXT prose uses justified lines and 16 px side padding on phones; paragraph endings and explicit line breaks remain natural.
 - Import PDFs, deduplicate by SHA-256, search the library, and star papers.
@@ -50,7 +50,7 @@ Local folder names containing a colon (such as some iCloud paths on macOS) are s
 
 Open [the local library preview](http://127.0.0.1:8787/). Use Login → test account A or B to try uploads and private shelves. All service data stays under the ignored `.wrangler/` directory; test identities are loopback-only and are not real cloud accounts. Rebuild with `npm run build:cloud` after frontend changes. See [Cloudflare implementation and setup](docs/CLOUDFLARE.md).
 
-`npm run dev` still starts the frontend-only Vite server. Without the local Worker, the public library reports an unavailable service; Settings → Local documents remains usable. For a frontend-only production build preview:
+`npm run dev` still starts the frontend-only Vite server. Without the local Worker, the public library reports an unavailable service. For a frontend-only production build preview:
 
 ```sh
 npm run build
@@ -59,7 +59,7 @@ npm run preview -- --port 4173 --strictPort
 
 Open [the local preview](http://127.0.0.1:4173/). Both servers listen on loopback by default; this address is not reachable from a separate phone. Responsive layout has been checked at mobile browser dimensions, but real iOS/Android interactions still need testing.
 
-A fresh clone starts with an empty public library. Log into a local test account and use Upload to publish a shareable PDF to the local service. For private files, use Settings → Local documents and import there. No research papers or translation jobs are included in the repository. Optional samples are confined to the local-only library.
+A fresh clone starts with an empty public library. Log into a local test account and use Upload to publish a shareable PDF to the local service. For private files, choose private visibility in Upload. No research papers or translation jobs are included in the repository. Optional legacy samples are not exposed by the current app.
 
 
 ### Preview over Wi-Fi
@@ -76,7 +76,7 @@ Import the final bilingual PDF to read its original layout. To enable paragraphs
 
 Public uploads are deliberately shared: PDFs, TXT files and reading bundles are stored in R2 (simulated when running locally), while D1 stores catalog metadata and account reading records. Public endpoints never return personal notes or uploader identities. Private documents use authenticated owner/admin file routes, with separate per-owner IDs and content hashes; identical files can have independent private and public copies. Private caches are excluded from the local-only library. Publication requires an explicit confirmation; original local files are not uploaded automatically. Uploaded files default to an 8 GB application storage budget, including in-flight uploads and withdrawn files. This is not an account-wide Cloudflare billing cap.
 
-IndexedDB `yuejian-library` remains compatible: the `books` store retains local files and guest records, while per-account snapshots and pending edits live in `settings`. Switching accounts separates private records; guest records are merged only through an explicit setting. Clearing site data loses cached files and unsynced edits. Synced account records can be restored from the service. Markdown export is not a complete library backup.
+IndexedDB `yuejian-library` remains compatible: the `books` store retains local files and guest records, while per-account snapshots and pending edits live in `settings`. Switching accounts separates private records; guest-record merging is no longer exposed in the app. Clearing site data loses cached files and unsynced edits. Synced account records can be restored from the service. Markdown export is not a complete library backup.
 
 Private samples, screenshots, generated assets, dependencies, build output, and local credentials are excluded from Git. **Vite still copies files under `public/` into builds even when Git ignores them.** `npm run build:cloud` writes `dist-cloud/` with an explicit asset allowlist, excluding all local samples; future deployment must still use a clean checkout and inspect the output. See [security and data handling](SECURITY.md).
 

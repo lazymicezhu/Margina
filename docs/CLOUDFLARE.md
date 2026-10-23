@@ -1,6 +1,6 @@
 # Cloudflare 部署与管理后台
 
-使用 Workers 托管网页和接口、D1 保存账号与笔记、R2 保存 PDF / TXT / JSON。无需先运行本地预览，也不需要推送 GitHub。当前公共网站为 https://margina.lazymicezhu.com，Worker、D1 和私有 R2 已部署。Zero Trust Free 与邮箱验证码登录已启用；登录有效期为 24 小时，仅保护 `/api/private/*`。当前允许登录的邮箱为已配置的管理员邮箱，新增账号需加入 Access Allow 策略。
+使用 Workers 托管网页和接口、D1 保存账号与笔记、R2 保存 PDF / TXT / JSON。无需先运行本地预览，也不需要推送 GitHub。当前公共网站为 https://margina.lazymicezhu.com，Worker、D1 和私有 R2 已部署。Zero Trust Free 与邮箱验证码登录已启用；登录有效期为 24 小时，仅保护 `/api/private/*`。密码账号升级后，邮箱注册与找回密码使用 Access 验证；日常登录由 Margina 的邮箱密码表单处理。
 
 ## 1. 准备 Cloudflare
 
@@ -35,7 +35,7 @@ npm run deploy:cloud
 - 使用自定义域名时，必须将该主机名的 `api/private/*` 路径加入同一个 Access 应用。当前已配置 `margina.lazymicezhu.com/api/private/*` 和 `margina.2644860482.workers.dev/api/private/*`，共用同一 AUD；仅绑定 Worker 自定义域名不会自动添加 Access 登录保护。
 - 使用基于域名和路径的应用，仅保护 `/api/private/*`。不要使用覆盖整个 Worker 的 “Protect this Worker” 开关，否则公开书库也会要求登录。
 - 登录方式启用 **One-time PIN**（邮箱验证码）。
-- 添加 **Allow** 策略，先在 **Emails** 中填你的邮箱及需要登录的其他用户邮箱。后续可以在此增删允许登录的邮箱。
+- 添加 **Allow** 策略，**Include → Login Methods → One-time PIN**，允许验证邮箱后注册。不要使用 Bypass。管理员权限仍单独由 `ADMIN_EMAILS` 决定。
 - 保存后复制应用的 **Application Audience (AUD) Tag**。团队域名可在 Zero Trust 设置中找到，例如 `your-team.cloudflareaccess.com`。
 
 将以下两项填入 `wrangler.production.jsonc` 的 `vars`：
@@ -55,13 +55,13 @@ Cloudflare 支持对 `workers.dev` 的指定路径设置 Access，无需先购�
 npx wrangler secret put ADMIN_EMAILS --config wrangler.production.jsonc
 ```
 
-出现输入提示后填你的登录邮箱；多个管理员用英文逗号分隔。不要把 `ADMIN_EMAILS` 另行写入 `vars`，避免与同名 Secret 冲突。管理员邮箱也必须被上一节的 Access Allow 策略允许。
+出现输入提示后填你的登录邮箱；多个管理员用英文逗号分隔。不要把 `ADMIN_EMAILS` 另行写入 `vars`，避免与同名 Secret 冲突。管理员也需通过邮箱验证设置登录密码。
 
 ```sh
 npm run deploy:cloud
 ```
 
-打开网站，点击「登录」输入邮箱验证码。管理员在「设置与账号 → 管理后台」进入后台，也可以直接打开网站的 `/admin`。
+打开网站，首次点击「注册账号」验证邮箱并设置密码，之后使用邮箱和密码登录。管理员在「设置与账号 → 管理后台」进入后台，也可以直接打开网站的 `/admin`。
 
 ## 管理后台
 
@@ -138,3 +138,13 @@ npm run deploy:cloud
 ```
 
 全新部署的 `server/schema.sql` 已包含这些表。此升级不修改已有文献、笔记或浏览器 IndexedDB 版本。文件夹访问控制和缓存边界见 [架构说明](ARCHITECTURE.md#shelf-folders-and-title-remarks)。
+
+### 已有部署升级：邮箱注册与密码登录
+
+1. 应用 `server/migrations/0003-password-accounts.sql`，不修改现有账号、文献和笔记。
+2. 用 `wrangler secret put AUTH_PEPPER --config wrangler.production.jsonc` 保存至少 32 字符的随机服务端密钥（不可提交到 Git）。备份此密钥；不要随意替换。
+3. 设置 `PASSWORD_AUTH="true"`。Cloudflare Access 应用仍覆盖两个域名的 `/api/private/*`，将 Allow 的 Include 改为 Login Methods → One-time PIN。
+4. 部署后，通过「注册账号」为旧邮箱设置密码；邮箱验证成功时自动绑定已有用户 ID，不会新建空书架。忘记密码通过「忘记密码」验证邮箱后重设。
+5. 私有 API 的当前客户端入口为 `/api/account/*`；Worker 保留全部账号、管理员和文件夹权限校验。不得给这些 API 增加绕过 Worker 的静态响应或缓存。
+
+`/api/auth/start` 和密码接口可由游客访问，但设置密码必须持有邮箱验证后签发的单次凭据。登录会话最长 30 天，退出立即撤销，重设密码撤销旧会话。注册/恢复邮箱验证仍使用 Zero Trust，因此没有消除原方案的 50 用户免费容量限制。此方案不需要开通 Workers Paid 邮件发送服务。

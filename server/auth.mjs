@@ -1,3 +1,4 @@
+import { passwordIdentity } from './password-auth.mjs';
 import { createRemoteJWKSet, jwtVerify, SignJWT } from 'jose';
 
 let localKey;
@@ -19,6 +20,10 @@ export async function identity(request, env) {
       return { id: payload.sub, email: payload.email, admin: payload.sub === 'local-alice', local: true };
     } catch { return null; }
   }
+  if (env.PASSWORD_AUTH === 'true') return passwordIdentity(request, env);
+  return accessIdentity(request, env);
+}
+export async function accessIdentity(request, env) {
   if (!authConfigured(env)) return null;
   // The edge Access policy protects /api/private/*; verification also makes
   // alternate Worker routes fail closed instead of trusting email headers.

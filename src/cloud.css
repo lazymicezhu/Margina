@@ -67,3 +67,5 @@
 @media (max-width: 600px) { .intro:has(.shelf-top-actions) { flex-wrap: wrap; gap: 16px; } .shelf-top-actions { width: 100%; } .shelf-top-actions button { flex: 1; justify-content: center; } .folder-grid { grid-template-columns: 1fr; } }
 .shelf-form .primary-button { background: var(--green); color: var(--on-accent); }
 .shelf-form .primary-button:disabled { opacity: .45; }
+.auth-links { display: flex; justify-content: space-between; gap: 16px; font-size: 13px; }
+.auth-links a { color: var(--green); text-underline-offset: 4px; padding-block: 6px; }

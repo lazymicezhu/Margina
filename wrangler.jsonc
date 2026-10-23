@@ -10,6 +10,7 @@
   "vars": {
     "ENVIRONMENT": "production",
     "LOCAL_DEV_AUTH": "false",
+    "PASSWORD_AUTH": "true",
     "MAX_STORAGE_BYTES": "8000000000",
     "ACCESS_ISSUER": "",
     "ACCESS_AUD": ""

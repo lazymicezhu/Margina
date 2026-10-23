@@ -12,7 +12,8 @@ export class ApiError extends Error {
   constructor(message: string, public status: number, public body?: unknown) { super(message); }
 }
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, { ...options, headers: { ...shelfHeaders(), ...options.headers }, credentials: 'same-origin', redirect: 'error', cache: 'no-store' });
+  const endpoint = path.startsWith('/api/private/') ? path.replace('/api/private/', '/api/account/') : path;
+  const response = await fetch(endpoint, { ...options, headers: { ...shelfHeaders(), ...options.headers }, credentials: 'same-origin', redirect: 'error', cache: 'no-store' });
   if (!response.headers.get('content-type')?.includes('application/json')) throw new ApiError('服务连接失败，请刷新页面或重新登录。', response.status);
   const body = await response.json();
   if (!response.ok) throw new ApiError(body.error || '请求失败，请重试', response.status, body);
@@ -24,7 +25,7 @@ export async function getPaper(id: string): Promise<Paper> {
   try { return await api<Paper>(`/api/papers/${id}`); }
   catch (error) { if (!(error instanceof ApiError) || error.status !== 404) throw error; return api<Paper>(`/api/private/files/${id}`); }
 }
-const fileUrl = (paper: Paper, kind: 'file' | 'bundle') => paper.visibility === 'private' ? `/api/private/files/${paper.id}/${kind}` : `/api/papers/${paper.id}/${kind}`;
+const fileUrl = (paper: Paper, kind: 'file' | 'bundle') => paper.visibility === 'private' ? `/api/account/files/${paper.id}/${kind}` : `/api/papers/${paper.id}/${kind}`;
 export const jsonOptions = (method: string, body: unknown): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 export async function uploadPdf(book: Book, user: string, visibility: 'public' | 'private' = 'public') {
   return api<{ paper: Paper; duplicate?: boolean }>(`/api/private/papers/${book.id}`, {

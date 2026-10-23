@@ -6,9 +6,11 @@ English | [简体中文](README.zh-CN.md)
 
 A mobile-first web reader for bilingual academic papers, with highlights, notes, and reading progress stored in your browser. Margina reuses final PDFs, translation segments, and glossaries from the `academic-pdf-bilingual` workflow powered by BabelDOC. It does not translate papers or require an AI API key.
 
-> **v0.1.0.** Public library, account sync and an administrator console are implemented for Cloudflare Workers / D1 / R2. Follow the [deployment guide](docs/CLOUDFLARE.md) to publish directly; no local preview or Git push is required. The public site is deployed at https://margina.lazymicezhu.com with D1 and private R2 storage; email-code login and the administrator console are enabled.
+> **v0.1.0.** Public library, account sync and an administrator console are implemented for Cloudflare Workers / D1 / R2. Follow the [deployment guide](docs/CLOUDFLARE.md) to publish directly; no local preview or Git push is required. The public site is deployed at https://margina.lazymicezhu.com with D1 and private R2 storage; email-verified registration, password login and the administrator console are implemented.
 
 ## Features
+
+- Register by verifying an email once, then set a password and sign in with it. Sessions last 30 days; email verification also supports password recovery. Existing verified emails retain their account IDs, shelves and notes. Cloudflare Access still supplies registration/recovery verification, so its free-plan user limit still applies.
 
 - Open on the personal shelf by default. Create account-synced folders, optionally password-protected, and organize books through each shelf card’s edit button. A personal title remark replaces the displayed title on your shelf and in the reader; clearing it restores the original. Original filenames and public catalog titles stay unchanged.
 - Protected folders require their password after a page refresh. Folder locks guard personal notes, private file access and shelf edits; public library copies remain public. Deleting an unlocked folder moves its books to the shelf root.

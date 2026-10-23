@@ -1,6 +1,7 @@
+import { passwordRequest, passwordStatus, passwordAuthEnabled } from './password-auth.mjs';
 import { shelfAccess, shelfRequest } from './shelf.mjs';
 import { parseTxt, TXT_MAX_BYTES } from '../src/txt.ts';
-import { identity, localAuth, authConfigured, devCookie } from './auth.mjs';
+import { identity, localAuth, authConfigured, devCookie, accessIdentity } from './auth.mjs';
 import { check, readJson, readBytes, readingData } from './validation.mjs';
 import { validateBundle } from '../src/bundle.ts';
 import { adminRequest, rememberUser } from './admin.mjs';
@@ -45,7 +46,10 @@ async function discard(env, key) {
 
 export default {
   async fetch(request, env) {
-    const url = new URL(request.url); const path = url.pathname;
+    const url = new URL(request.url);
+    // Account routes use the same owner/admin guards; Access remains for email verification.
+    if (url.pathname.startsWith('/api/account/')) { url.pathname = url.pathname.replace('/api/account/', '/api/private/'); request = new Request(url, request); }
+    const path = url.pathname;
     try {
       if (!path.startsWith('/api/')) return env.ASSETS.fetch(request);
       const mutating = !['GET', 'HEAD'].includes(request.method);
@@ -53,10 +57,11 @@ export default {
         // Cookies never authorize cross-origin writes. No permissive CORS.
         check(request.headers.get('origin') === url.origin, '请从本站页面提交操作', 403);
       }
+      if (path.startsWith('/api/auth/') || path === '/api/private/auth/verify') return await passwordRequest(request, env, accessIdentity);
       if (path === '/api/session' && request.method === 'GET') {
         const user = await identity(request, env);
         await rememberUser(env, user);
-        return json({ user, local: localAuth(request, env), loginAvailable: localAuth(request, env) || authConfigured(env) });
+        return json({ user, local: localAuth(request, env), loginAvailable: localAuth(request, env) || passwordAuthEnabled(env) || authConfigured(env), ...await passwordStatus(request, env) });
       }
       if (path === '/api/dev/login' && request.method === 'POST') {
         check(localAuth(request, env), '本地测试登录未启用', 404);

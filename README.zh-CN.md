@@ -35,7 +35,7 @@
 
 ## 部署到 Cloudflare
 
-按 [完整步骤](docs/CLOUDFLARE.md) 创建 D1 / R2、配置邮箱登录和 `ADMIN_EMAILS`。管理后台入口为 `/admin`，支持按账号查看笔记，以及上传、撤下、恢复和删除文献。正式资源绑定及非密钥设置保存在已纳入 Git 的 `wrangler.jsonc`，运行密钥保留在 Cloudflare。将现有 Worker 通过 Workers Builds 连接本仓库后，推送 `main` 自动发布：构建命令为 `npm test && npm run build:cloud`，部署命令为 `npx wrangler deploy --config wrangler.jsonc`。GitHub Actions 独立检查构建；明确需要手动发布时仍可使用 `npm run deploy:cloud`。
+按 [完整步骤](docs/CLOUDFLARE.md) 创建 D1 / R2、配置邮箱登录和 `ADMIN_EMAILS`。管理后台入口为 `/admin`，支持按账号查看笔记，以及上传、撤下、恢复和删除文献。正式资源绑定及非密钥设置保存在已纳入 Git 的 `wrangler.jsonc`，运行密钥保留在 Cloudflare。现有 Worker 已于 2026-10-27 通过 Workers Builds 连接本仓库，推送 `main` 自动触发发布：构建命令为 `npm test && npm run build:cloud`，部署命令为 `npx wrangler deploy --config wrangler.jsonc`。GitHub Actions 独立检查构建；明确需要手动发布时仍可使用 `npm run deploy:cloud`。
 
 已有部署在发布书库文件夹功能前，需应用 `server/migrations/0004-catalog-folders.sql`，或重新执行当前 `server/schema.sql`。两者只添加表，不改写已有文献及阅读记录；仅修改本地源码不会更新线上网站。
 

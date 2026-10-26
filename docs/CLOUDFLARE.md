@@ -4,6 +4,8 @@
 
 ## 自动部署现有 Margina
 
+现有 `margina` Worker 已于 2026-10-27 连接 `lazymicezhu/Margina` 的 `main` 分支。每次推送先运行测试并构建，通过后发布；以下设置用于核对或重新连接。
+
 在 Cloudflare 的 Workers & Pages → margina → Settings → Builds 中连接 GitHub 仓库 `lazymicezhu/Margina`。生产分支选 `main`，根目录选 `/`，构建命令填 `npm test && npm run build:cloud`，部署命令填 `npx wrangler deploy --config wrangler.jsonc`。首次连接前确认仓库已包含线上功能与正式配置。保留现有 Worker、D1、R2、域名与运行密钥；无须再新建项目。非生产分支预览默认不启用。
 
 GitHub 的 Cloudflare App 授权限制到此仓库；部署使用 Cloudflare 管理的构建令牌。`ADMIN_EMAILS`、`AUTH_PEPPER` 等密钥继续保存在 Worker 的 Variables & Secrets，不能写进代码。构建变量与运行变量是两套独立设置。首次连接后触发一次构建，再用一次 `main` 推送验证自动触发；在 Builds 和 Deployments 中核对提交与版本，并检查正式网站。

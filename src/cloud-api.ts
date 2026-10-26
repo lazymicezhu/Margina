@@ -20,16 +20,16 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   return body;
 }
 export const session = () => api<Session>('/api/session');
-export const catalog = (query = '', offset = 0) => api<{ papers: Paper[]; more: boolean }>(`/api/catalog?q=${encodeURIComponent(query)}&offset=${offset}`);
+export const catalog = (query = '', offset = 0, folder?: string | null) => api<{ papers: Paper[]; more: boolean }>(`/api/catalog?q=${encodeURIComponent(query)}&offset=${offset}${folder === undefined ? '' : `&folder=${encodeURIComponent(folder || '')}`}`);
 export async function getPaper(id: string): Promise<Paper> {
   try { return await api<Paper>(`/api/papers/${id}`); }
   catch (error) { if (!(error instanceof ApiError) || error.status !== 404) throw error; return api<Paper>(`/api/private/files/${id}`); }
 }
 const fileUrl = (paper: Paper, kind: 'file' | 'bundle') => paper.visibility === 'private' ? `/api/account/files/${paper.id}/${kind}` : `/api/papers/${paper.id}/${kind}`;
 export const jsonOptions = (method: string, body: unknown): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-export async function uploadPdf(book: Book, user: string, visibility: 'public' | 'private' = 'public') {
+export async function uploadPdf(book: Book, user: string, visibility: 'public' | 'private' = 'public', catalogFolderId?: string | null) {
   return api<{ paper: Paper; duplicate?: boolean }>(`/api/private/papers/${book.id}`, {
-    method: 'PUT', headers: { 'Content-Type': book.format === 'txt' ? 'text/plain' : 'application/pdf', 'X-Paper-Visibility': visibility, 'X-Public-Upload': visibility === 'public' ? 'confirmed' : '', 'X-Margina-User': user,
+    method: 'PUT', headers: { 'Content-Type': book.format === 'txt' ? 'text/plain' : 'application/pdf', 'X-Paper-Visibility': visibility, 'X-Public-Upload': visibility === 'public' ? 'confirmed' : '', 'X-Margina-User': user, ...(visibility === 'public' && catalogFolderId ? { 'X-Catalog-Folder': catalogFolderId } : {}),
       'X-Paper-Metadata': encodeURIComponent(JSON.stringify({ title: book.title.slice(0, 500), author: book.author.slice(0, 300), fileName: book.fileName.slice(0, 255), pages: book.pages, bilingual: book.bilingual })) }, body: book.blob,
   });
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowDownToLine, ArrowRight, BookOpen, Check, ChevronRight, Cloud, FolderOpen, FolderPlus, LockKeyhole, Pencil, Library, LoaderCircle, LogIn, NotebookPen, Plus, RefreshCw, Search, Settings2, Star, Trash2, Upload, User, X } from 'lucide-react';
 import type { Book } from './types';
-import type { AccountState, Paper, ReadingData, Session } from './cloud-types';
+import type { AccountState, CatalogFolder, Paper, ReadingData, Session } from './cloud-types';
 import { emptyReading } from './cloud-types';
 import { api, cachePaper, catalog, getPaper, jsonOptions, session, uploadBundle, uploadPdf } from './cloud-api';
 import { readCachedPdf, type PdfSource } from './pdf-source';
@@ -17,6 +17,7 @@ import { CopyButton } from './interactions';
 import { useShelf, type ShelfFolder } from './useShelf';
 import { bookLocked } from './shelf-lock';
 import { FolderEditor, FolderUnlock, ShelfBookEditor } from './ShelfDialogs';
+import { CatalogFolderEditor, UploadFolderPicker } from './CatalogFolders';
 import PaperCover from './PaperCover';
 import './cloud.css';
 
@@ -51,6 +52,18 @@ export default function App() {
   const [files, setFiles] = useState<File[]>([]);
   const [publicConsent, setPublicConsent] = useState(false);
   const [uploadVisibility, setUploadVisibility] = useState<'private' | 'public'>('private');
+  const [catalogFolders, setCatalogFolders] = useState<CatalogFolder[]>([]);
+  const [catalogFoldersReady, setCatalogFoldersReady] = useState(false);
+  const [catalogFoldersError, setCatalogFoldersError] = useState('');
+  const catalogFoldersSerial = useRef(0);
+  const [catalogFolderId, setCatalogFolderId] = useState<string | null>(null);
+  const [catalogEditor, setCatalogEditor] = useState<CatalogFolder | 'new' | null>(null);
+  const [catalogDelete, setCatalogDelete] = useState<CatalogFolder | null>(null);
+  const [catalogMove, setCatalogMove] = useState<Paper | null>(null);
+  const [moveDestination, setMoveDestination] = useState('');
+  const [uploadCatalogFolder, setUploadCatalogFolder] = useState('');
+  const [uploadShelfFolder, setUploadShelfFolder] = useState('');
+  const catalogFolder = catalogFolders.find(f => f.id === catalogFolderId);
   const [active, setActive] = useState<Book | null>(null);
   const [pdfSource, setPdfSource] = useState<PdfSource>();
   const [withdraw, setWithdraw] = useState<Paper | null>(null);
@@ -96,13 +109,43 @@ export default function App() {
     const serial = ++searchSerial.current;
     setLoading(true); setCatalogError('');
     try {
-      const result = await catalog(query, append ? papers.length : 0);
+      const result = await catalog(query, append ? papers.length : 0, catalogFolderId || (query ? undefined : null));
       if (serial !== searchSerial.current) return;
       setPapers(old => append ? [...old, ...result.papers.filter(p => !old.some(o => o.id === p.id))] : result.papers);
       setKnown(old => ({ ...old, ...Object.fromEntries(result.papers.map(p => [p.id, p])) }));
       setMore(result.more); setConnected(true);
     } catch (error) { if (serial === searchSerial.current) setCatalogError(problem(error)); }
     finally { if (serial === searchSerial.current) setLoading(false); }
+  }
+  async function refreshCatalogFolders() {
+    const serial = ++catalogFoldersSerial.current;
+    const user = userRef.current?.id;
+    try {
+      const result = await api<{ folders: CatalogFolder[] }>('/api/catalog/folders');
+      if (serial !== catalogFoldersSerial.current || userRef.current?.id !== user) return;
+      setCatalogFolders(result.folders); setCatalogFoldersReady(true); setCatalogFoldersError('');
+      setCatalogFolderId(id => id && !result.folders.some(f => f.id === id) ? null : id);
+    } catch (error) {
+      if (serial === catalogFoldersSerial.current && userRef.current?.id === user) { setCatalogFoldersReady(false); setCatalogFoldersError(problem(error)); }
+    }
+  }
+  async function catalogMutation(path: string, method: string, body?: unknown) {
+    const id = userRef.current?.id;
+    if (!id) throw new Error('请先登录');
+    const options = body === undefined ? { method } : jsonOptions(method, body);
+    const result = await api<{ id?: string }>(`/api/private/catalog${path}`, { ...options, headers: { ...options.headers, 'X-Margina-User': id } });
+    await refreshCatalogFolders();
+    return result;
+  }
+  function openUpload() {
+    if (!current.user) { setLogin(true); return; }
+    setUploadCatalogFolder(view === 'catalog' ? catalogFolderId || '' : '');
+    setUploadShelfFolder(view === 'shelf' ? folderId || '' : '');
+    setPublicConsent(false); setUpload(true);
+  }
+  function openCatalogMove(paper: Paper) {
+    setCatalogMove(paper); setMoveDestination(paper.catalogFolderId || '');
+    setCatalogFoldersReady(false); void refreshCatalogFolders();
   }
   async function refreshUploads() {
     const id = userRef.current?.id;
@@ -117,6 +160,9 @@ export default function App() {
   }
   useEffect(() => { void refreshSession(); void listBooks().then(setCached).catch(error => notify(problem(error))); }, []);
   useEffect(() => {
+    setUpload(false); setFiles([]); setUploadCatalogFolder(''); setUploadShelfFolder('');
+    setCatalogEditor(null); setCatalogDelete(null); setCatalogMove(null);
+    setCatalogFoldersReady(false); setCatalogFolders([]); catalogFoldersSerial.current++;
     setFolderId(null); setFolderEditor(null); setUnlockFolder(null); setEditBook(null); setDeleteFolder(null);
     setActive(null); setPdfSource(undefined); setKnown(old => Object.fromEntries(Object.entries(old).filter(([, paper]) => paper.visibility !== 'private'))); setAccount(freshAccount()); setSyncError(''); setSyncing(false); setPaused(false);
     if (!accountId) return;
@@ -126,10 +172,14 @@ export default function App() {
     return () => { cancelled = true; };
   }, [accountId]);
   useEffect(() => {
-    if (view === 'catalog') { const timer = setTimeout(() => void refreshCatalog(), 200); return () => { clearTimeout(timer); searchSerial.current++; }; }
+    if (view === 'catalog' || view === 'uploads' || upload || adminOpen) void refreshCatalogFolders();
+    if (upload && accountId) void shelf.refresh().catch(() => {});
+  }, [view, upload, accountId, adminOpen]);
+  useEffect(() => {
+    if (view === 'catalog') { setPapers([]); setMore(false); setLoading(true); const timer = setTimeout(() => void refreshCatalog(), 200); return () => { clearTimeout(timer); searchSerial.current++; }; }
     if (view === 'uploads') void refreshUploads();
     else setLoading(false);
-  }, [query, view, accountId]);
+  }, [query, view, accountId, catalogFolderId]);
   useEffect(() => {
     if (!accountId) return;
     let cancelled = false;
@@ -180,9 +230,9 @@ export default function App() {
   }, [accountId, paused, syncing, syncError]);
 
   async function run(label: string, action: () => Promise<void>) {
-    if (actionLock.current) return;
+    if (actionLock.current) return false;
     actionLock.current = true; setBusy(label);
-    try { await action(); } catch (error) { notify(problem(error)); }
+    try { await action(); return true; } catch (error) { notify(problem(error)); return false; }
     finally { setBusy(''); actionLock.current = false; }
   }
   async function openPaper(paper: Paper) {
@@ -274,15 +324,21 @@ export default function App() {
     if ((uploadVisibility === 'public' && !publicConsent) || !files.length) return;
     await run('正在上传到书库…', async () => {
       const failures: string[] = []; let count = 0;
+      const toFile: { id: string; name: string }[] = [];
+      let keptLocation = false;
+      if (uploadVisibility === 'public' && (!catalogFoldersReady || (uploadCatalogFolder && !catalogFolders.some(f => f.id === uploadCatalogFolder)))) throw new Error('请刷新并重新选择书库文件夹');
+      if (uploadVisibility === 'private' && (!shelf.ready || (uploadShelfFolder && !shelf.folders.some(f => f.id === uploadShelfFolder)))) throw new Error('请刷新并重新选择书架文件夹');
       for (const file of [...files.filter(f => /\.(pdf|txt)$/i.test(f.name)), ...files.filter(f => /\.json$/i.test(f.name))]) {
         setBusy(`正在上传 ${file.name}…`);
         try {
           if (/\.(pdf|txt)$/i.test(file.name)) {
             if (file.size > 100 * 1024 * 1024) throw new Error('PDF 不能超过 100 MB');
             const book = await (/\.txt$/i.test(file.name) ? makeTxtBook : makeBook)(file, file.name);
-            const result = await uploadPdf(book, user.id, uploadVisibility);
+            const result = await uploadPdf(book, user.id, uploadVisibility, uploadCatalogFolder);
             setKnown(old => ({ ...old, [result.paper.id]: result.paper }));
             await editReading(user.id, result.paper.id, { shelf: true });
+            if (uploadVisibility === 'private' && !toFile.some(item => item.id === result.paper.id)) toFile.push({ id: result.paper.id, name: file.name });
+            if (result.duplicate && uploadVisibility === 'public' && (result.paper.catalogFolderId || '') !== uploadCatalogFolder) keptLocation = true;
           } else {
             const result = await uploadBundle(file, user.id, uploadVisibility);
             setKnown(old => ({ ...old, [result.paper.id]: result.paper }));
@@ -290,10 +346,25 @@ export default function App() {
           count++;
         } catch (error) { failures.push(`${file.name}：${problem(error)}`); }
       }
+      // Finish bundles and persist reading records before a protected destination
+      // locks the uploaded books. A failed classification remains retryable.
+      if (toFile.length) {
+        try {
+          await syncAccount(user.id);
+          for (const item of toFile) {
+            try { await shelf.mutate(`/items/${item.id}`, 'PUT', { folderId: uploadShelfFolder || null, remark: shelf.item(item.id)?.remark || '' }); }
+            catch (error) { failures.push(`${item.name} 已上传，归类失败：${problem(error)}`); }
+          }
+        } catch (error) { failures.push(`文件已上传，归类失败：${problem(error)}`); }
+        await reloadAccount(user.id);
+      }
       if (count) setAdminRevision(old => old + 1);
       if (!failures.length) { setUpload(false); setFiles([]); setPublicConsent(false); }
-      notify([count ? `已处理 ${count} 个文件` : '', ...failures].filter(Boolean).join('；'));
-      if (view === 'uploads') await refreshUploads(); else if (uploadVisibility === 'private') setView('shelf'); else { setView('catalog'); await refreshCatalog(); }
+      notify([count ? `已处理 ${count} 个文件` : '', keptLocation ? '重复文献保留原书库位置，可在「我的上传」中调整归类' : '', ...failures].filter(Boolean).join('；'));
+      await refreshCatalogFolders();
+      if (view === 'uploads') await refreshUploads();
+      else if (uploadVisibility === 'private') { setView('shelf'); setFolderId(shelf.folders.find(f => f.id === uploadShelfFolder)?.locked ? null : uploadShelfFolder || null); }
+      else { setView('catalog'); setQuery(''); setCatalogFolderId(uploadCatalogFolder || null); await refreshCatalog(); }
     });
   }
   async function localLogin(name: string) {
@@ -312,13 +383,13 @@ export default function App() {
   const listed = view === 'shelf' ? shelfIds.filter(id => !shelf.locked(id) && (shelf.folders.some(f => f.id === shelf.item(id)?.folderId) ? shelf.item(id)?.folderId : null) === folderId).map(id => lookup(id) || { id, title: '暂不可用文献', author: '', fileName: '', size: 0, pages: personalData(id).page, bilingual: false, hasBundle: false, created: 0, updated: 0, removed: true } as Paper) : papers;
   const visible = view === 'catalog' ? listed : listed.filter(p => !shelf.locked(p.id) && `${p.title} ${shelf.item(p.id)?.remark || ''} ${p.author}`.toLowerCase().includes(query.toLowerCase()));
   const titles = { catalog: '书库', shelf: '我的书架', notes: '我的笔记', uploads: '我的上传' };
-  const navigate = (next: View) => { setView(next); setQuery(''); setFolderId(null); if (accountId) void shelf.refresh().catch(() => {}); };
+  const navigate = (next: View) => { setView(next); setQuery(''); setFolderId(null); setCatalogFolderId(null); if (accountId) void shelf.refresh().catch(() => {}); };
   const privateView = view !== 'catalog' && !current.user;
   const closeAdmin = () => { setAdminOpen(false); history.replaceState(null, '', '/'); void refreshCatalog(); };
 
   return <>
     {active ? <Reader key={`${accountId || 'guest'}:${active.id}`} book={active} pdfSource={pdfSource} onBack={() => { setActive(null); setPdfSource(undefined); void listBooks().then(setCached); }} onUpdate={updateReading} onReload={reloadActivePdf} notify={notify} /> :
-      adminOpen ? current.user?.admin ? <AdminPanel key={accountId} user={current.user} revision={adminRevision} onClose={closeAdmin} onUpload={() => setUpload(true)} onChanged={() => { setKnown({}); void refreshCatalog(); }} /> : <main className="admin-shell"><button className="text-button" onClick={closeAdmin}><ArrowRight size={17} />返回书库</button><div className="empty-state"><h1>管理后台</h1>{current.user ? <p>需要管理员权限</p> : <button className="primary-button" onClick={() => setLogin(true)}>登录</button>}</div></main> :
+      adminOpen ? current.user?.admin ? <AdminPanel key={accountId} user={current.user} revision={adminRevision} onClose={closeAdmin} onUpload={openUpload} onOrganize={openCatalogMove} onChanged={() => { setKnown({}); void refreshCatalogFolders(); }} /> : <main className="admin-shell"><button className="text-button" onClick={closeAdmin}><ArrowRight size={17} />返回书库</button><div className="empty-state"><h1>管理后台</h1>{current.user ? <p>需要管理员权限</p> : <button className="primary-button" onClick={() => setLogin(true)}>登录</button>}</div></main> :
       <div className="app-shell cloud-shell">
         <aside className="sidebar"><Logo /><nav aria-label="主导航">
           <button className={`nav-item ${view === 'catalog' ? 'active' : ''}`} onClick={() => navigate('catalog')}><Library size={19} />书库</button>
@@ -329,12 +400,18 @@ export default function App() {
         <main className="library-main">
           <header className="library-top"><div className="mobile-brand"><Logo small /></div><button className="local-pill" onClick={() => current.user ? setSettings(true) : setLogin(true)}>{current.user ? <><Cloud size={14} />{current.local ? '本地测试账号' : '已登录'}{dirty > 0 && ` · ${dirty} 待同步`}</> : <><User size={14} />登录</>}<ChevronRight size={13} /></button></header>
           <div className="library-content">
-            <section className="intro"><div><h1>{titles[view]}</h1><p>{view === 'catalog' ? '自由浏览与阅读，把喜欢的文献加入自己的书架。' : view === 'shelf' ? '你的收藏与阅读进度，登录后可在不同设备间同步。' : view === 'notes' ? '' : '管理你上传的公开与私密文献。'}</p></div><div className="shelf-top-actions">{view === 'shelf' && current.user && <button className="secondary-button" disabled={!!busy || !shelf.ready} onClick={() => setFolderEditor('new')}><FolderPlus size={18} />新建文件夹</button>}<button className="primary-button import-button" disabled={!!busy} onClick={() => current.user ? setUpload(true) : setLogin(true)}><Plus size={18} />上传</button></div></section>
+            <section className="intro"><div><h1>{titles[view]}</h1><p>{view === 'catalog' ? '自由浏览与阅读，把喜欢的文献加入自己的书架。' : view === 'shelf' ? '你的收藏与阅读进度，登录后可在不同设备间同步。' : view === 'notes' ? '' : '管理你上传的公开与私密文献。'}</p></div><div className="shelf-top-actions">{view === 'catalog' && current.user && <button className="secondary-button" disabled={!!busy || !catalogFoldersReady} onClick={() => setCatalogEditor('new')}><FolderPlus size={18} />新建文件夹</button>}{view === 'shelf' && current.user && <button className="secondary-button" disabled={!!busy || !shelf.ready} onClick={() => setFolderEditor('new')}><FolderPlus size={18} />新建文件夹</button>}<button className="primary-button import-button" disabled={!!busy} onClick={openUpload}><Plus size={18} />上传</button></div></section>
             {current.local && <div className="cloud-notice"><span className="status-dot" /><span>本地预览 · 文件与测试账号仅在这台电脑的预览服务中保存</span></div>}
             {current.user && (dirty > 0 || syncError) && <div className="cloud-notice" role="status"><span>{syncError || `${dirty} 篇文献有待同步的个人记录${paused ? '，自动同步已暂停' : ''}`}</span><button className="text-button" disabled={syncing} onClick={() => void syncNow()}><RefreshCw size={14} className={syncing ? 'spin' : ''} />{syncing ? '同步中' : '重试同步'}</button></div>}
             {privateView ? <div className="empty-state"><BookOpen size={32} /><h3>登录后拥有自己的书架</h3><p>公开书库无需登录即可阅读。收藏、上传和跨设备同步需要登录。</p><button className="primary-button" onClick={() => setLogin(true)}>登录</button></div> : <>
-              {view !== 'notes' && <div className="collection-controls"><label className="search cloud-search"><Search size={17} /><input aria-label="搜索书库" placeholder="搜索标题、作者…" value={query} onChange={event => setQuery(event.target.value)} />{query && <button className="icon-button" aria-label="清空搜索" onClick={() => setQuery('')}><X size={15} /></button>}</label><button className="text-button" onClick={() => view === 'uploads' ? void refreshUploads() : view === 'catalog' ? void refreshCatalog() : void syncNow()} disabled={loading || syncing}><RefreshCw size={15} />刷新</button></div>}
+              {view !== 'notes' && <div className="collection-controls"><label className="search cloud-search"><Search size={17} /><input aria-label="搜索书库" placeholder="搜索标题、作者…" value={query} onChange={event => setQuery(event.target.value)} />{query && <button className="icon-button" aria-label="清空搜索" onClick={() => setQuery('')}><X size={15} /></button>}</label><button className="text-button" onClick={() => view === 'uploads' ? void refreshUploads() : view === 'catalog' ? void Promise.all([refreshCatalog(), refreshCatalogFolders()]) : void syncNow()} disabled={loading || syncing}><RefreshCw size={15} />刷新</button></div>}
               {catalogError && (view === 'catalog' || view === 'uploads') && <div className="cloud-error" role="alert"><p>{catalogError}</p><button className="secondary-button" onClick={() => view === 'uploads' ? void refreshUploads() : void refreshCatalog()}>重新连接</button></div>}
+              {view === 'catalog' && <>
+                <div className="folder-toolbar">{catalogFolderId && <><button className="text-button" onClick={() => { setCatalogFolderId(null); setQuery(''); }}>‹ 书库</button><strong>{catalogFolder?.name || '文件夹'}</strong>{catalogFolder?.canManage && <button className="icon-button" aria-label="管理书库文件夹" disabled={!!busy} onClick={() => setCatalogEditor(catalogFolder)}><Settings2 size={18} /></button>}</>}</div>
+                {catalogFoldersError && <div className="cloud-error" role="alert"><p>{catalogFoldersError}</p><button className="secondary-button" onClick={() => void refreshCatalogFolders()}>重新加载文件夹</button></div>}
+                {!catalogFolderId && <div className="folder-grid">{catalogFolders.filter(f => f.name.toLowerCase().includes(query.toLowerCase())).map(f => <button className="folder-card" key={f.id} onClick={() => { setCatalogFolderId(f.id); setQuery(''); }}><FolderOpen size={23} /><span><strong>{f.name}</strong><small>{f.count} 本</small></span><ChevronRight size={17} /></button>)}</div>}
+                {!!query && !catalogFolderId && <p className="fineprint">搜索所有书库文件夹中的文献</p>}
+              </>}
               {current.user && view !== 'catalog' && !shelf.ready ? <div className="empty-state"><p>{shelf.error || '正在加载书架…'}</p>{shelf.error && <button className="secondary-button" onClick={() => void run('正在刷新…', async () => { await shelf.refresh(); await syncNow(); })}>重试</button>}</div> : view === 'notes' ? <><div className="section-heading"><h2>{ownRecords.reduce((n, [, r]) => n + r.data.annotations.length, 0)} 条笔记</h2><button className="text-button" onClick={() => saveFile(ownRecords.map(([id, record]) => notesMarkdown({ title: displayTitle(id), annotations: record.data.annotations } as Book)).join('\n\n---\n\n'), 'Margina-我的笔记.md')}><ArrowDownToLine size={16} />导出</button></div><div className="all-notes">{ownRecords.flatMap(([id, record]) => record.data.annotations.map(note => <article className="global-note" key={`${id}:${note.id}`}><button className="note-source" onClick={() => { const p = lookup(id); if (p) void openPaper(p); }}>{displayTitle(id)} · 第 {note.page} 页<ArrowRight size={14} /></button>{note.quote && <blockquote>{note.quote}</blockquote>}{note.text && <p>{note.text}</p>}<div className="note-copy"><CopyButton text={[note.quote, note.text].filter(Boolean).join('\n\n')} onError={() => notify('复制失败，请重试')} /></div></article>))}</div>{!ownRecords.some(([, r]) => r.data.annotations.length) && <Empty text="还没有笔记，打开文献选中文字即可记录。" />}</> : loading && !visible.length ? <div className="loading-state"><LoaderCircle className="spin" /><p>正在打开书库…</p></div> : <>
                 {view === 'shelf' && <>
                   <div className="folder-toolbar">{folder ? <><button className="text-button" onClick={() => setFolderId(null)}>‹ 书架</button><strong>{folder.name}</strong><button className="icon-button" aria-label="管理文件夹" onClick={() => setFolderEditor(folder)}><Settings2 size={18} /></button>{folder.protected && <button className="text-button" disabled={!!busy} onClick={() => void run('正在锁定…', async () => { await syncNow(); await shelf.mutate(`/folders/${folder.id}/lock`, 'POST'); setFolderId(null); })}><LockKeyhole size={16} />锁定</button>}</> : null}</div>
@@ -364,13 +441,14 @@ export default function App() {
                       </div>}
                       {view !== 'shelf' && <div className="public-card-actions">
                         <button className={`secondary-button ${data.shelf ? 'on-shelf' : ''}`} disabled={!!busy || (paper.removed && !data.shelf)} onClick={() => data.shelf ? setRemoveShelf(paper) : void addToShelf(paper)}>{data.shelf ? <Check size={15} /> : <Plus size={15} />}{data.shelf ? '已加入书架' : '加入书架'}</button>
+                        {(view === 'catalog' || view === 'uploads') && current.user && paper.canOrganize && <button className="secondary-button" aria-label={`书库归类 ${title}`} disabled={!!busy} onClick={() => openCatalogMove(paper)}><FolderOpen size={16} />归类</button>}
                         {view === 'uploads' && !paper.removed && <button className="icon-button" aria-label={`撤下 ${title}`} onClick={() => setWithdraw(paper)}><Trash2 size={16} /></button>}
                       </div>}
                       {data.opened > 0 && <div className="progress-track"><div style={{ width: `${data.page / paper.pages * 100}%` }} /></div>}
                     </div>
                   </article>;
                 })}</div>
-                {!visible.length && !catalogError && !(view === 'shelf' && !folderId && shelf.folders.length) && <Empty text={query ? '没有找到匹配的文献。' : view === 'shelf' ? folderId ? '文件夹里还没有书籍。' : '书架还是空的，去书库挑选想读的文献吧。' : view === 'uploads' ? '你还没有上传文献。' : '书库还是空的，登录后分享第一篇文献。'} />}
+                {!visible.length && !catalogError && !(view === 'shelf' && !folderId && shelf.folders.length) && !(view === 'catalog' && !catalogFolderId && !query && catalogFolders.length) && <Empty text={query ? '没有找到匹配的文献。' : view === 'shelf' ? folderId ? '文件夹里还没有书籍。' : '书架还是空的，去书库挑选想读的文献吧。' : view === 'uploads' ? '你还没有上传文献。' : catalogFolderId ? '文件夹里还没有文献，上传时可以选择此文件夹。' : '书库还是空的，登录后分享第一篇文献。'} />}
                 {more && view === 'catalog' && <button className="wide-button" disabled={loading} onClick={() => void refreshCatalog(true)}>{loading ? '正在加载…' : '加载更多'}</button>}
                 {view === 'shelf' && shelfIds.some(id => !shelf.locked(id) && !lookup(id)) && <p className="fineprint">部分文献暂时不可用，个人记录仍保留，可稍后重试同步。</p>}
               </>}
@@ -382,8 +460,33 @@ export default function App() {
     {message && <div className="toast" role="status"><span>{message}</span><button aria-label="关闭提示" onClick={() => setMessage('')}><X size={16} /></button></div>}
     {busy && <div className="busy-toast" role="status"><LoaderCircle size={17} className="spin" />{busy}</div>}
     {login && <Modal title={current.setupEmail ? '设置密码' : '登录 Margina'} close={() => { setLogin(false); if (location.search) history.replaceState(null, '', location.pathname); }}>{current.local ? <><button className="wide-button" disabled={!!busy} onClick={() => void localLogin('alice')}><User size={17} />使用测试账号 A</button><button className="wide-button" disabled={!!busy} onClick={() => void localLogin('bob')}><User size={17} />使用测试账号 B</button></> : current.passwordLogin ? <AuthForm setupEmail={current.setupEmail} onSuccess={async () => { await refreshSession(); setLogin(false); history.replaceState(null, '', location.pathname); }} /> : current.loginAvailable ? <a className="wide-button primary-button" href={adminOpen ? '/api/private/login?next=/admin' : '/api/private/login'}><LogIn size={17} />通过邮箱登录</a> : <p>账号服务尚未配置。</p>}</Modal>}
-    {upload && <Modal title="上传文献" close={() => !busy && setUpload(false)}><label className="upload-picker">选择 PDF / TXT / JSON 文件<input type="file" accept=".pdf,.txt,.json" multiple disabled={!!busy} onChange={event => { setFiles(Array.from(event.target.files || []).filter(file => /\.(pdf|txt|json)$/i.test(file.name))); setPublicConsent(false); }} /></label><ul className="upload-file-list">{files.map((file, index) => <li key={index}><span>{file.name}</span><small>{sizeLabel(file.size)}</small></li>)}</ul><fieldset className="upload-visibility" disabled={!!busy}><legend>可见范围</legend><label><input type="radio" name="visibility" checked={uploadVisibility === 'private'} onChange={() => { setUploadVisibility('private'); setPublicConsent(false); }} />仅自己可见</label><label><input type="radio" name="visibility" checked={uploadVisibility === 'public'} onChange={() => setUploadVisibility('public')} />公开到书库</label></fieldset><p className="fineprint">PDF ≤ 100 MB · TXT ≤ 10 MB · JSON ≤ 20 MB</p>{uploadVisibility === 'public' && <label className="consent"><input type="checkbox" checked={publicConsent} disabled={!!busy} onChange={event => setPublicConsent(event.target.checked)} /><span>我确认有权公开分享这些文件。</span></label>}<button className="wide-button primary-button" disabled={!files.length || (uploadVisibility === 'public' && !publicConsent) || !!busy} onClick={() => void doUpload()}><Upload size={17} />{busy ? '正在处理…' : uploadVisibility === 'private' ? '私密上传' : '公开上传'}</button></Modal>}
+    {upload && <Modal title="上传文献" close={() => !busy && setUpload(false)}><label className="upload-picker">选择 PDF / TXT / JSON 文件<input type="file" accept=".pdf,.txt,.json" multiple disabled={!!busy} onChange={event => { setFiles(Array.from(event.target.files || []).filter(file => /\.(pdf|txt|json)$/i.test(file.name))); setPublicConsent(false); }} /></label><ul className="upload-file-list">{files.map((file, index) => <li key={index}><span>{file.name}</span><small>{sizeLabel(file.size)}</small></li>)}</ul><fieldset className="upload-visibility" disabled={!!busy}><legend>可见范围</legend><label><input type="radio" name="visibility" checked={uploadVisibility === 'private'} onChange={() => { setUploadVisibility('private'); setPublicConsent(false); }} />仅自己可见</label><label><input type="radio" name="visibility" checked={uploadVisibility === 'public'} onChange={() => setUploadVisibility('public')} />公开到书库</label></fieldset><UploadFolderPicker key={uploadVisibility} isPublic={uploadVisibility === 'public'} folders={uploadVisibility === 'public' ? catalogFolders : shelf.folders} value={uploadVisibility === 'public' ? uploadCatalogFolder : uploadShelfFolder} change={uploadVisibility === 'public' ? setUploadCatalogFolder : setUploadShelfFolder} busy={!!busy} ready={uploadVisibility === 'public' ? catalogFoldersReady : shelf.ready} error={uploadVisibility === 'public' ? catalogFoldersError : shelf.error} retry={() => { if (uploadVisibility === 'public') void refreshCatalogFolders(); else void shelf.refresh().catch(() => {}); }} create={async name => {
+      const saved = await run('正在创建文件夹…', async () => {
+        if (uploadVisibility === 'public') { const result = await catalogMutation('/folders', 'POST', { name }); if (result.id) setUploadCatalogFolder(result.id); }
+        else { const result = await shelf.mutate('/folders', 'POST', { name }); if (result?.id) setUploadShelfFolder(result.id); }
+      });
+      if (!saved) throw new Error('文件夹未创建');
+    }} /><p className="fineprint">阅读包跟随对应 PDF 的位置。重复公开文献保留原归类。</p><p className="fineprint">PDF ≤ 100 MB · TXT ≤ 10 MB · JSON ≤ 20 MB</p>{uploadVisibility === 'public' && <label className="consent"><input type="checkbox" checked={publicConsent} disabled={!!busy} onChange={event => setPublicConsent(event.target.checked)} /><span>我确认有权公开分享这些文件。</span></label>}<button className="wide-button primary-button" disabled={!files.length || (uploadVisibility === 'public' ? !publicConsent || !catalogFoldersReady : !shelf.ready) || !!busy} onClick={() => void doUpload()}><Upload size={17} />{busy ? '正在处理…' : uploadVisibility === 'private' ? '私密上传' : '公开上传'}</button></Modal>}
     {settings && <Modal title="设置与账号" close={() => setSettings(false)}><div className="storage-row"><span>当前身份</span><strong>{current.user?.email || '游客'}</strong></div><div className="storage-row"><span>同步服务</span><strong>{connected ? current.local ? '本地测试服务' : '已连接' : '未连接'}</strong></div>{current.user ? <><div className="storage-row"><span>最近成功同步</span><strong>{account.lastSynced ? new Date(account.lastSynced).toLocaleString('zh-CN') : '尚未同步'}</strong></div><p>{syncError || (dirty ? `${dirty} 篇文献的修改待同步，已保存在本机。` : '')}</p><button className="wide-button" disabled={syncing} onClick={() => void syncNow()}><RefreshCw size={17} className={syncing ? 'spin' : ''} />立即同步</button><label className="consent"><input type="checkbox" checked={paused} onChange={event => { const next = event.target.checked; setPaused(next); void setting(`sync-paused:${accountId}`, next); if (!next) void syncNow(); }} />暂停自动同步</label>{current.user.admin && <button className="wide-button" onClick={() => { setSettings(false); setAdminOpen(true); history.replaceState(null, '', '/admin'); }}>管理后台</button>}{current.passwordLogin && <a className="wide-button" href="/api/auth/start?mode=reset">修改密码</a>}<button className="wide-button" disabled={!!busy || syncing} onClick={() => void run('正在退出…', logout)}>退出登录</button>{current.local && <button className="text-button" onClick={() => { setSettings(false); setLogin(true); }}>切换测试账号</button>}</> : <button className="wide-button" onClick={() => { setSettings(false); setLogin(true); }}><LogIn size={17} />登录</button>}</Modal>}
+    {catalogEditor && <Modal title={catalogEditor === 'new' ? '新建书库文件夹' : '管理书库文件夹'} close={() => !busy && setCatalogEditor(null)}><CatalogFolderEditor folder={catalogEditor === 'new' ? undefined : catalogEditor} busy={!!busy} save={name => void run('正在保存文件夹…', async () => { await catalogMutation(catalogEditor === 'new' ? '/folders' : `/folders/${catalogEditor.id}`, catalogEditor === 'new' ? 'POST' : 'PATCH', { name }); setCatalogEditor(null); })} remove={catalogEditor === 'new' ? undefined : () => { setCatalogDelete(catalogEditor); setCatalogEditor(null); }} /></Modal>}
+    {catalogDelete && <Modal title="删除书库文件夹？" close={() => !busy && setCatalogDelete(null)}><p>「{catalogDelete.name}」中的文献会移回书库首页，文献和阅读记录都会保留。</p><button className="wide-button danger-button" disabled={!!busy} onClick={() => void run('正在删除文件夹…', async () => { await catalogMutation(`/folders/${catalogDelete.id}`, 'DELETE'); setCatalogDelete(null); setCatalogFolderId(null); setQuery(''); })}>删除文件夹</button></Modal>}
+    {catalogMove && <Modal title="书库归类" close={() => !busy && setCatalogMove(null)}>
+      <p className="classification-title">{catalogMove.title}</p>
+      <UploadFolderPicker key={catalogMove.id} label="目标书库文件夹" isPublic folders={catalogFolders} value={moveDestination} change={setMoveDestination} busy={!!busy} ready={catalogFoldersReady} error={catalogFoldersError} retry={() => void refreshCatalogFolders()} create={async name => {
+        const saved = await run('正在创建文件夹…', async () => { const result = await catalogMutation('/folders', 'POST', { name }); if (result.id) setMoveDestination(result.id); });
+        if (!saved) throw new Error('文件夹未创建');
+      }} />
+      <p className="fineprint">只调整公开书库中的位置，文献内容和个人阅读记录都会保留。</p>
+      <button className="wide-button primary-button" disabled={!!busy || !catalogFoldersReady || (!!moveDestination && !catalogFolders.some(f => f.id === moveDestination))} onClick={() => void run('正在归类…', async () => {
+        await catalogMutation(`/items/${catalogMove.id}`, 'PUT', { folderId: moveDestination || null });
+        setKnown(old => ({ ...old, [catalogMove.id]: { ...catalogMove, catalogFolderId: moveDestination || null, catalogFolderName: catalogFolders.find(f => f.id === moveDestination)?.name || null } }));
+        setCatalogMove(null);
+        if (adminOpen) setAdminRevision(old => old + 1);
+        else if (view === 'uploads') await refreshUploads();
+        else await refreshCatalog();
+        notify('已更新文献归类');
+      })}>保存归类</button>
+    </Modal>}
     {folderEditor && <Modal title={folderEditor === 'new' ? '新建文件夹' : '管理文件夹'} close={() => !busy && setFolderEditor(null)}><FolderEditor folder={folderEditor === 'new' ? undefined : folderEditor} busy={!!busy} save={(name, password) => void run('正在保存…', async () => { await syncNow(); await shelf.mutate(folderEditor === 'new' ? '/folders' : `/folders/${folderEditor.id}`, folderEditor === 'new' ? 'POST' : 'PATCH', { name, ...(password !== undefined ? { password } : {}) }); setFolderEditor(null); })} remove={folderEditor === 'new' ? undefined : () => { setDeleteFolder(folderEditor); setFolderEditor(null); }} /></Modal>}
     {unlockFolder && <Modal title={`解锁 ${unlockFolder.name}`} close={() => !busy && setUnlockFolder(null)}><FolderUnlock busy={!!busy} submit={password => void run('正在解锁…', async () => { await syncNow(); await shelf.mutate(`/folders/${unlockFolder.id}/unlock`, 'POST', { password }); setFolderId(unlockFolder.id); setView('shelf'); setQuery(''); setUnlockFolder(null); await syncNow(); })} /></Modal>}
     {deleteFolder && <Modal title="删除文件夹？" close={() => !busy && setDeleteFolder(null)}><p>文件夹内的书籍会移回书架首页。</p><button className="wide-button danger-button" disabled={!!busy} onClick={() => void run('正在删除…', async () => { await shelf.mutate(`/folders/${deleteFolder.id}`, 'DELETE'); setDeleteFolder(null); setFolderId(null); })}>删除文件夹</button></Modal>}

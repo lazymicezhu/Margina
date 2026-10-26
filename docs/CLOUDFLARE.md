@@ -2,6 +2,14 @@
 
 使用 Workers 托管网页和接口、D1 保存账号与笔记、R2 保存 PDF / TXT / JSON。无需先运行本地预览，也不需要推送 GitHub。当前公共网站为 https://margina.lazymicezhu.com，Worker、D1 和私有 R2 已部署。Zero Trust Free 与邮箱验证码登录已启用；登录有效期为 24 小时，仅保护 `/api/private/*`。密码账号升级后，邮箱注册与找回密码使用 Access 验证；日常登录由 Margina 的邮箱密码表单处理。
 
+## 自动部署现有 Margina
+
+在 Cloudflare 的 Workers & Pages → margina → Settings → Builds 中连接 GitHub 仓库 `lazymicezhu/Margina`。生产分支选 `main`，根目录选 `/`，构建命令填 `npm test && npm run build:cloud`，部署命令填 `npx wrangler deploy --config wrangler.jsonc`。首次连接前确认仓库已包含线上功能与正式配置。保留现有 Worker、D1、R2、域名与运行密钥；无须再新建项目。非生产分支预览默认不启用。
+
+GitHub 的 Cloudflare App 授权限制到此仓库；部署使用 Cloudflare 管理的构建令牌。`ADMIN_EMAILS`、`AUTH_PEPPER` 等密钥继续保存在 Worker 的 Variables & Secrets，不能写进代码。构建变量与运行变量是两套独立设置。首次连接后触发一次构建，再用一次 `main` 推送验证自动触发；在 Builds 和 Deployments 中核对提交与版本，并检查正式网站。
+
+构建只包含 `dist-cloud/` 白名单资源。数据库结构变化需在相应版本发布前明确执行兼容迁移，不在每次推送时自动运行数据库命令。后续推送 `main` 即可更新正式网站，GitHub Actions 的 build 检查仍独立运行。其他人的复刻仓库必须先替换 `wrangler.jsonc` 中的账户、数据库、存储及认证配置。
+
 ## 1. 准备 Cloudflare
 
 在 Cloudflare 控制台开通 R2 和 Zero Trust Free。R2 桶使用 Standard 存储、保持私有；无需开启 r2.dev 或公开桶。准备 Node.js 22.13+，在项目文件夹执行：
@@ -9,12 +17,11 @@
 ```sh
 npm ci
 npx wrangler login
-cp wrangler.jsonc wrangler.production.jsonc
-npx wrangler d1 create margina --config wrangler.production.jsonc --update-config=false
-npx wrangler r2 bucket create margina-files --config wrangler.production.jsonc
+npx wrangler d1 create margina --config wrangler.jsonc --update-config=false
+npx wrangler r2 bucket create margina-files --config wrangler.jsonc
 ```
 
-复制 D1 返回的 `database_id`，填入 `wrangler.production.jsonc` 中的 `REPLACE_BEFORE_DEPLOYMENT`。该配置副本已被 Git 忽略。如果资源已存在，直接使用原数据库 ID 和桶名称，不要重复创建。
+本仓库的 `wrangler.jsonc` 已绑定现有 Margina 正式资源；仅新建独立实例时替换账户、D1 ID、R2 桶及 Access 设置。配置纳入 Git，但不能包含密码、API token 或运行密钥。如果资源已存在，直接使用原数据库 ID 和桶名称，不要重复创建。
 
 ## 2. 初始化并首次发布
 
@@ -38,7 +45,7 @@ npm run deploy:cloud
 - 添加 **Allow** 策略，**Include → Login Methods → One-time PIN**，允许验证邮箱后注册。不要使用 Bypass。管理员权限仍单独由 `ADMIN_EMAILS` 决定。
 - 保存后复制应用的 **Application Audience (AUD) Tag**。团队域名可在 Zero Trust 设置中找到，例如 `your-team.cloudflareaccess.com`。
 
-将以下两项填入 `wrangler.production.jsonc` 的 `vars`：
+将以下两项填入 `wrangler.jsonc` 的 `vars`：
 
 ```json
 "ACCESS_ISSUER": "https://your-team.cloudflareaccess.com",
@@ -52,7 +59,7 @@ Cloudflare 支持对 `workers.dev` 的指定路径设置 Access，无需先购�
 ## 4. 设置管理员并完成发布
 
 ```sh
-npx wrangler secret put ADMIN_EMAILS --config wrangler.production.jsonc
+npx wrangler secret put ADMIN_EMAILS --config wrangler.jsonc
 ```
 
 出现输入提示后填你的登录邮箱；多个管理员用英文逗号分隔。不要把 `ADMIN_EMAILS` 另行写入 `vars`，避免与同名 Secret 冲突。管理员也需通过邮箱验证设置登录密码。
@@ -65,7 +72,7 @@ npm run deploy:cloud
 
 ## 管理后台
 
-- **文献库**：搜索全部文献、上传 PDF / TXT / JSON、撤下、恢复、删除。
+- **文献库**：搜索全部文献、上传 PDF / TXT / JSON、撤下、恢复、删除。公开文献显示所在文件夹，点击「归类」可移动到已有文件夹、新建文件夹或移回书库首页；已撤下的公开文献也可归类，私密文献保持个人书架归类。
 - **账号笔记**：按邮箱搜索账号，打开账号查看各篇文献的笔记、高亮、页码和书签数量。
 - **撤下**：隐藏公开目录和下载，文件保留，可恢复。
 - **删除**：删除云端 PDF / JSON 并释放应用存储预算，保留文献信息与账号笔记。中断时显示「重试删除」。已删除文献不可恢复，也不能以同一 PDF 哈希重新上传。
@@ -73,6 +80,8 @@ npm run deploy:cloud
 账号首次登录后进入后台列表。后台只能读取已经成功同步到云端的笔记。普通账号不能调用后台接口。管理员由服务器验证的邮箱决定，不能通过修改网页或请求头提升权限。
 
 ## 更新已有部署
+
+书库文件夹功能增加 `catalog_folders`、`catalog_items` 两张表。发布新版 Worker 前先执行下面的 `db:cloud`，或单独应用 `server/migrations/0004-catalog-folders.sql`；重复执行不会清空文件、归类或阅读记录。原文献保留在书库首页，直到上传者或管理员调整归类。
 
 ```sh
 npm run db:cloud
@@ -120,7 +129,7 @@ npm run dev:cloud
 已有部署升级前执行一次（新数据库直接使用 schema.sql，无需重复执行）：
 
 ```sh
-node node_modules/wrangler/bin/wrangler.js d1 execute margina --remote --file server/migrations/0001-private-text.sql --config wrangler.production.jsonc
+node node_modules/wrangler/bin/wrangler.js d1 execute margina --remote --file server/migrations/0001-private-text.sql --config wrangler.jsonc
 npm run deploy:cloud
 ```
 
@@ -133,7 +142,7 @@ npm run deploy:cloud
 已部署私密 TXT 版本的数据库先执行本次增量迁移，再发布代码；不要重复执行旧的 `0001-private-text.sql`：
 
 ```sh
-node node_modules/wrangler/bin/wrangler.js d1 execute margina --remote --file server/migrations/0002-shelf-folders.sql --config wrangler.production.jsonc
+node node_modules/wrangler/bin/wrangler.js d1 execute margina --remote --file server/migrations/0002-shelf-folders.sql --config wrangler.jsonc
 npm run deploy:cloud
 ```
 
@@ -142,7 +151,7 @@ npm run deploy:cloud
 ### 已有部署升级：邮箱注册与密码登录
 
 1. 应用 `server/migrations/0003-password-accounts.sql`，不修改现有账号、文献和笔记。
-2. 用 `wrangler secret put AUTH_PEPPER --config wrangler.production.jsonc` 保存至少 32 字符的随机服务端密钥（不可提交到 Git）。备份此密钥；不要随意替换。
+2. 用 `wrangler secret put AUTH_PEPPER --config wrangler.jsonc` 保存至少 32 字符的随机服务端密钥（不可提交到 Git）。备份此密钥；不要随意替换。
 3. 设置 `PASSWORD_AUTH="true"`。Cloudflare Access 应用仍覆盖两个域名的 `/api/private/*`，将 Allow 的 Include 改为 Login Methods → One-time PIN。
 4. 部署后，通过「注册账号」为旧邮箱设置密码；邮箱验证成功时自动绑定已有用户 ID，不会新建空书架。忘记密码通过「忘记密码」验证邮箱后重设。
 5. 私有 API 的当前客户端入口为 `/api/account/*`；Worker 保留全部账号、管理员和文件夹权限校验。不得给这些 API 增加绕过 Worker 的静态响应或缓存。

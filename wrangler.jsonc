@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "margina",
+  "account_id": "f1d5f8949c8e69f94058620eaf296578",
   "send_metrics": false,
   "workers_dev": true,
   "preview_urls": false,
@@ -12,10 +13,9 @@
     "LOCAL_DEV_AUTH": "false",
     "PASSWORD_AUTH": "true",
     "MAX_STORAGE_BYTES": "8000000000",
-    "ACCESS_ISSUER": "",
-    "ACCESS_AUD": ""
+    "ACCESS_ISSUER": "https://2644860482.cloudflareaccess.com",
+    "ACCESS_AUD": "b229b6513427416a414c5d9aac07bff9ada9386947d6c1f15644962dadc637b1"
   },
-  // Copy to wrangler.production.jsonc and fill in the D1 database ID.
-  "d1_databases": [{ "binding": "DB", "database_name": "margina", "database_id": "REPLACE_BEFORE_DEPLOYMENT" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "margina", "database_id": "814e366e-3e42-4c9c-8da3-8dfdb765e67a" }],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "margina-files" }]
 }

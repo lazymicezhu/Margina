@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Plus, RefreshCw, Search } from 'lucide-react';
+import { ArrowLeft, FolderOpen, Plus, RefreshCw, Search } from 'lucide-react';
 import { api } from './cloud-api';
 import type { Account, Paper, RemoteRecord } from './cloud-types';
 import './admin.css';
@@ -10,18 +10,18 @@ type AdminRecord = RemoteRecord & { title: string; removed: boolean };
 const failure = (e: unknown) => e instanceof Error ? e.message : '操作失败';
 const statusLabel = ['公开', '已撤下', '已删除', '删除未完成'];
 
-export default function AdminPanel({ user, revision, onClose, onUpload, onChanged }: {
-  user: Account; revision: number; onClose: () => void; onUpload: () => void; onChanged: () => void;
+export default function AdminPanel({ user, revision, onClose, onUpload, onChanged, onOrganize }: {
+  user: Account; revision: number; onClose: () => void; onUpload: () => void; onChanged: () => void; onOrganize: (paper: Paper) => void;
 }) {
   const [tab, setTab] = useState<'papers' | 'users'>('papers');
   return <main className="admin-shell">
     <header className="admin-header"><button className="text-button" onClick={onClose}><ArrowLeft size={17} />返回书库</button><h1>管理后台</h1></header>
     <nav className="admin-tabs" aria-label="后台导航"><button aria-pressed={tab === 'papers'} onClick={() => setTab('papers')}>文献库</button><button aria-pressed={tab === 'users'} onClick={() => setTab('users')}>账号笔记</button></nav>
-    {tab === 'papers' ? <Papers user={user} revision={revision} onUpload={onUpload} onChanged={onChanged} /> : <Users user={user} />}
+    {tab === 'papers' ? <Papers user={user} revision={revision} onUpload={onUpload} onChanged={onChanged} onOrganize={onOrganize} /> : <Users user={user} />}
   </main>;
 }
 
-function Papers({ user, revision, onUpload, onChanged }: { user: Account; revision: number; onUpload: () => void; onChanged: () => void }) {
+function Papers({ user, revision, onUpload, onChanged, onOrganize }: { user: Account; revision: number; onUpload: () => void; onChanged: () => void; onOrganize: (paper: Paper) => void }) {
   const [rows, setRows] = useState<AdminPaper[]>([]);
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('all');
@@ -57,7 +57,7 @@ function Papers({ user, revision, onUpload, onChanged }: { user: Account; revisi
   return <section>
     <div className="admin-toolbar"><label className="search cloud-search"><Search size={17} /><input aria-label="搜索文献" placeholder="搜索标题、作者" value={q} onChange={e => setQ(e.target.value)} /></label><select aria-label="文献状态" value={status} onChange={e => setStatus(e.target.value)}><option value="all">全部</option><option value="active">可用</option><option value="withdrawn">已撤下</option><option value="incomplete">删除未完成</option></select><button className="primary-button" onClick={onUpload}><Plus size={17} />上传</button><button className="icon-button" aria-label="刷新文献库" disabled={loading || busy} onClick={() => void load()}><RefreshCw size={17} /></button></div>
     {error && <p className="cloud-error" role="alert">{error}</p>}
-    <div className="admin-paper-list">{rows.map(p => <article className="admin-paper" key={p.id}><div><h2>{p.title}</h2><p>{p.author || p.fileName}</p><small>{p.owner} · {p.pages} 页 · {(p.size / 1024 / 1024).toFixed(1)} MB</small></div><div className="admin-paper-actions"><span>{p.status === 0 && p.visibility === 'private' ? '私密' : statusLabel[p.status]}</span>{p.status === 0 && <button className="secondary-button" disabled={busy || loading} onClick={() => void change(p, 'withdraw')}>撤下</button>}{p.status === 1 && <button className="secondary-button" disabled={busy || loading} onClick={() => void change(p, 'restore')}>恢复</button>}{p.status !== 2 && <button className="secondary-button danger-button" disabled={busy || loading} onClick={() => void change(p, 'delete')}>{p.status === 3 ? '重试删除' : '删除'}</button>}</div></article>)}</div>
+    <div className="admin-paper-list">{rows.map(p => <article className="admin-paper" key={p.id}><div><h2>{p.title}</h2><p>{p.author || p.fileName}</p><p className="admin-folder-location">{p.visibility === 'public' ? `文件夹：${p.catalogFolderName || '书库首页'}` : '私密文献 · 在上传者个人书架中归类'}</p><small>{p.owner} · {p.pages} 页 · {(p.size / 1024 / 1024).toFixed(1)} MB</small></div><div className="admin-paper-actions"><span>{p.status === 0 && p.visibility === 'private' ? '私密' : statusLabel[p.status]}</span>{p.canOrganize && <button className="secondary-button" aria-label={`归类 ${p.title}`} disabled={busy || loading} onClick={() => onOrganize(p)}><FolderOpen size={16} />归类</button>}{p.status === 0 && <button className="secondary-button" disabled={busy || loading} onClick={() => void change(p, 'withdraw')}>撤下</button>}{p.status === 1 && <button className="secondary-button" disabled={busy || loading} onClick={() => void change(p, 'restore')}>恢复</button>}{p.status !== 2 && <button className="secondary-button danger-button" disabled={busy || loading} onClick={() => void change(p, 'delete')}>{p.status === 3 ? '重试删除' : '删除'}</button>}</div></article>)}</div>
     {!rows.length && !error && <p className="admin-empty">{loading ? '正在加载…' : '没有文献'}</p>}
     {more && <button className="wide-button" disabled={loading || busy} onClick={() => void load(true)}>{loading ? '正在加载…' : '加载更多'}</button>}
   </section>;

@@ -69,6 +69,15 @@
 .shelf-form .primary-button:disabled { opacity: .45; }
 .auth-links { display: flex; justify-content: space-between; gap: 16px; font-size: 13px; }
 .auth-links a { color: var(--green); text-underline-offset: 4px; padding-block: 6px; }
+.upload-destination { margin: 12px 0 18px; gap: 10px; min-width: 0; }
+.upload-destination > .text-button { justify-self: start; }
+.upload-folder-create { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; min-width: 0; }
+.upload-folder-create label { display: grid; gap: 8px; flex: 1 1 180px; min-width: 0; font-size: 14px; }
+.upload-folder-create button { min-height: 44px; }
+.upload-destination select { max-width: 100%; text-overflow: ellipsis; }
+.cloud-modal > .wide-button.primary-button { background: var(--green); color: var(--on-accent); }
+.cloud-modal > .wide-button.primary-button:disabled { opacity: .45; }
+.classification-title { overflow-wrap: anywhere; line-height: 1.7; }
 
 .cover-content { position: absolute; inset: 0; }
 .cloud-shell .cover-bottom { justify-content: flex-end; }

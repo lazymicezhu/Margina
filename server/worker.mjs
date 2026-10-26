@@ -1,5 +1,6 @@
 import { passwordRequest, passwordStatus, passwordAuthEnabled } from './password-auth.mjs';
 import { shelfAccess, shelfRequest } from './shelf.mjs';
+import { catalogFolders, catalogFolderRequest, requireCatalogFolder, paperWithFolder } from './catalog-folders.mjs';
 import { parseTxt, TXT_MAX_BYTES } from '../src/txt.ts';
 import { identity, localAuth, authConfigured, devCookie, accessIdentity } from './auth.mjs';
 import { check, readJson, readBytes, readingData } from './validation.mjs';
@@ -7,10 +8,11 @@ import { validateBundle } from '../src/bundle.ts';
 import { adminRequest, rememberUser } from './admin.mjs';
 
 const json = (data, status = 200, headers = {}) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers } });
-const publicPaper = p => ({ id: p.id, title: p.title, author: p.author, fileName: p.file_name, size: p.size, pages: p.pages,
+const publicPaper = (p, user) => ({ id: p.id, catalogFolderId: p.catalog_folder_id || null, catalogFolderName: p.catalog_folder_name || null,
+  canOrganize: !!user && p.visibility === 'public' && (p.removed === 0 || (user.admin && p.removed === 1)) && (p.owner === user.id || user.admin), title: p.title, author: p.author, fileName: p.file_name, size: p.size, pages: p.pages,
   format: p.pdf_key.endsWith('.txt') ? 'txt' : 'pdf', contentHash: p.content_hash || p.id, visibility: p.visibility, ...(p.visibility === 'private' ? { privateOwner: p.owner } : {}), bilingual: !!p.bilingual, hasBundle: !!p.bundle_key, created: p.created, updated: p.updated, removed: !!p.removed });
 const publicRecord = row => row ? { bookId: row.book_id, version: row.version, seq: row.seq, data: JSON.parse(row.data) } : null;
-const getPaper = (env, id) => env.DB.prepare('SELECT * FROM papers WHERE id = ?').bind(id).first();
+const getPaper = (env, id) => env.DB.prepare(`${paperWithFolder} WHERE p.id = ?`).bind(id).first();
 async function privateId(user, hash) {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`private:${user}:${hash}`));
   return Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('');
@@ -88,13 +90,19 @@ export default {
         check(localAuth(request, env), '本地测试登录未启用', 404);
         return json({ ok: true }, 200, { 'Set-Cookie': 'margina_dev=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' });
       }
+      if (path === '/api/catalog/folders' && request.method === 'GET') {
+        return json({ folders: await catalogFolders(env, await identity(request, env)) });
+      }
       if (path === '/api/catalog' && request.method === 'GET') {
+        const user = await identity(request, env);
         const query = (url.searchParams.get('q') || '').slice(0, 120);
         const offset = Math.max(0, Math.min(1000000, Number(url.searchParams.get('offset')) || 0));
-        const { results } = await env.DB.prepare(`SELECT * FROM papers WHERE removed = 0 AND visibility = 'public' AND
-          (instr(lower(title), lower(?)) > 0 OR instr(lower(author), lower(?)) > 0)
-          ORDER BY created DESC, id LIMIT 41 OFFSET ?`).bind(query, query, offset).all();
-        return json({ papers: results.slice(0, 40).map(publicPaper), more: results.length > 40 });
+        const folderId = url.searchParams.get('folder');
+        if (folderId) await requireCatalogFolder(env, folderId);
+        const { results } = await env.DB.prepare(`${paperWithFolder} WHERE p.removed = 0 AND p.visibility = 'public' AND
+          (? = 0 OR i.folder_id IS ?) AND (instr(lower(p.title), lower(?)) > 0 OR instr(lower(p.author), lower(?)) > 0)
+          ORDER BY p.created DESC, p.id LIMIT 41 OFFSET ?`).bind(folderId === null ? 0 : 1, folderId || null, query, query, offset).all();
+        return json({ papers: results.slice(0, 40).map(p => publicPaper(p, user)), more: results.length > 40 });
       }
       const publicMatch = path.match(/^\/api\/papers\/([a-f0-9]{64})(?:\/(pdf|file|bundle))?$/);
       if (publicMatch && ['GET', 'HEAD'].includes(request.method)) {
@@ -112,6 +120,7 @@ export default {
       if (path.startsWith('/api/private/admin/')) return await adminRequest(request, env, user, { json, publicPaper, publicRecord, discard });
       const shelf = await shelfAccess(request, env, user);
       if (path.startsWith('/api/private/shelf')) return await shelfRequest(request, env, user, shelf, json);
+      if (path.startsWith('/api/private/catalog/')) return await catalogFolderRequest(request, env, user, shelf, json);
       const privateFile = path.match(/^\/api\/private\/files\/([a-f0-9]{64})(?:\/(file|bundle))?$/);
       if (privateFile && ['GET', 'HEAD'].includes(request.method)) {
         shelf.requireBook(privateFile[1]);
@@ -122,8 +131,8 @@ export default {
 
       if (path === '/api/private/login' && request.method === 'GET') return Response.redirect(`${url.origin}${url.searchParams.get('next') === '/admin' ? '/admin' : '/'}`, 302);
       if (path === '/api/private/uploads' && request.method === 'GET') {
-        const { results } = await env.DB.prepare('SELECT * FROM papers WHERE owner = ? AND removed <> 2 ORDER BY created DESC LIMIT 200').bind(user.id).all();
-        return json({ papers: results.filter(p => !shelf.blockedBooks.has(p.id)).map(publicPaper) });
+        const { results } = await env.DB.prepare(`${paperWithFolder} WHERE p.owner = ? AND p.removed <> 2 ORDER BY p.created DESC LIMIT 200`).bind(user.id).all();
+        return json({ papers: results.filter(p => !shelf.blockedBooks.has(p.id)).map(p => publicPaper(p, user)) });
       }
       if (path === '/api/private/records' && request.method === 'GET') {
         const cursor = Number(url.searchParams.get('after') || 0);
@@ -183,6 +192,9 @@ export default {
         }
         if (request.method === 'PUT' && !uploadMatch[2]) {
           check(visibility === 'private' || request.headers.get('x-public-upload') === 'confirmed', '请确认文件将公开分享');
+          const catalogFolderId = request.headers.get('x-catalog-folder') || null;
+          check(!catalogFolderId || visibility === 'public', '私密文献不能放入公开书库文件夹');
+          if (catalogFolderId) await requireCatalogFolder(env, catalogFolderId);
           if (paper) {
             check(canRead(paper, user) && !paper.removed, '该文献不可用，请联系管理员', 409);
             return json({ paper: publicPaper(paper), duplicate: true });
@@ -213,9 +225,13 @@ export default {
               check(head && (await head.text()).includes('%PDF-'), '不是有效的 PDF 文件');
             }
             const now = Date.now();
-            const result = await env.DB.prepare(`INSERT OR IGNORE INTO papers
+            const insert = env.DB.prepare(`INSERT OR IGNORE INTO papers
               (id, title, author, file_name, size, pages, bilingual, pdf_key, owner, created, updated, content_hash, visibility)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, meta.title.trim(), meta.author, meta.fileName, size, meta.pages, meta.bilingual ? 1 : 0, key, user.id, now, now, hash, visibility).run();
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, meta.title.trim(), meta.author, meta.fileName, size, meta.pages, meta.bilingual ? 1 : 0, key, user.id, now, now, hash, visibility);
+            // Publish metadata and classification together. Concurrent duplicate
+            // uploads keep the winning document's location and ownership.
+            const [result] = await env.DB.batch([insert, ...(catalogFolderId ? [env.DB.prepare(`INSERT INTO catalog_items(book_id, folder_id)
+              SELECT id, ? FROM papers WHERE id = ? AND pdf_key = ?`).bind(catalogFolderId, id, key)] : [])]);
             if (!result.meta.changes) await discard(env, key);
           } catch (error) { await discard(env, key); throw error; }
           return json({ paper: publicPaper(await getPaper(env, id)) }, 201);

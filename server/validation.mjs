@@ -22,6 +22,7 @@ export async function readJson(request, limit = 1024 * 1024) {
 export function readingData(data, pages) {
   const integer = (n, min, max) => Number.isSafeInteger(n) && n >= min && n <= max;
   check(data && typeof data.shelf === 'boolean' && typeof data.starred === 'boolean', '书架数据不正确');
+  check(data.rating === undefined || integer(data.rating, 0, 5), '评分须为 0 至 5 的整数');
   check(integer(data.page, 1, pages) && integer(data.opened, 0, Number.MAX_SAFE_INTEGER), '阅读页码不正确');
   check(Array.isArray(data.bookmarks) && data.bookmarks.length <= pages && data.bookmarks.every(p => integer(p, 1, pages)), '书签数据不正确');
   check(Array.isArray(data.annotations) && data.annotations.length <= 2000, '笔记数量超过限制');
@@ -35,7 +36,7 @@ export function readingData(data, pages) {
     check(Array.isArray(n.rects) && n.rects.length <= 1000 && n.rects.every(r => ['x', 'y', 'width', 'height'].every(k => Number.isFinite(r[k]) && r[k] >= 0 && r[k] <= 1)), '高亮坐标不正确');
   }
   // Never persist arbitrary properties such as files, identities or secrets.
-  return { shelf: data.shelf, starred: data.starred, page: data.page, opened: data.opened,
+  return { shelf: data.shelf, starred: data.starred, rating: data.rating ?? 0, page: data.page, opened: data.opened,
     bookmarks: [...new Set(data.bookmarks)], annotations: data.annotations.map(n => ({
       id: n.id, page: n.page, quote: n.quote, text: n.text, rects: n.rects.map(({ x, y, width, height }) => ({ x, y, width, height })),
       color: n.color, created: n.created, updated: n.updated, language: n.language, ...(n.segmentId ? { segmentId: n.segmentId } : {}),

@@ -69,3 +69,19 @@
 .shelf-form .primary-button:disabled { opacity: .45; }
 .auth-links { display: flex; justify-content: space-between; gap: 16px; font-size: 13px; }
 .auth-links a { color: var(--green); text-underline-offset: 4px; padding-block: 6px; }
+
+.cover-content { position: absolute; inset: 0; }
+.cloud-shell .cover-bottom { justify-content: flex-end; }
+.shelf-card-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.book-rating, .shelf-card-icons { display: flex; align-items: center; }
+.book-rating { flex-shrink: 0; }
+.rating-star { display: grid; place-items: center; width: 32px; height: 44px; padding: 0; color: var(--muted); border-radius: 6px; }
+.rating-star.filled { color: var(--green); }
+.rating-star:hover { background: var(--surface); }
+.rating-star:disabled { opacity: .5; }
+.shelf-card-icons { margin-left: auto; gap: 2px; }
+.shelf-card-icons .icon-button { width: 36px; height: 44px; }
+.rating-star:focus-visible, .shelf-card-icons .icon-button:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+.cloud-shell .public-cover .cover-bottom > span { display: block; }
+.book-rating { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); width: 160px; max-width: 100%; min-width: 0; }
+.rating-star { width: 100%; }

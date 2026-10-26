@@ -59,6 +59,17 @@ test('PDF uploaded once, public catalogue never includes account identities', as
   assert.equal(response.status, 200);
   assert.equal(Buffer.compare(Buffer.from(await response.arrayBuffer()), bytes), 0);
 });
+test('PDF first-page requests support bounded byte ranges', async () => {
+  const response = await request(`/api/papers/${id}/file`, 'GET', undefined, undefined, { Range: 'bytes=0-15' });
+  assert.equal(response.status, 206);
+  assert.equal(response.headers.get('content-range'), `bytes 0-15/${bytes.length}`);
+  assert.equal(response.headers.get('content-length'), '16');
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes.subarray(0, 16));
+  assert.equal((await request(`/api/papers/${id}/file`, 'GET', undefined, undefined, { Range: `bytes=${bytes.length}-` })).status, 416);
+  const head = await request(`/api/papers/${id}/file`, 'HEAD');
+  assert.equal(head.headers.get('accept-ranges'), 'bytes');
+  assert.equal(head.headers.get('content-length'), String(bytes.length));
+});
 test('wrong PDF hash cannot publish a document', async () => {
   const badId = 'a'.repeat(64);
   const response = await mf.dispatchFetch(`http://localhost/api/private/papers/${badId}`, { method: 'PUT', body: bytes, headers: {
@@ -69,7 +80,7 @@ test('wrong PDF hash cannot publish a document', async () => {
   assert.equal((await request(`/api/papers/${badId}`)).status, 404);
 });
 test('reading records are isolated and concurrent writes use compare-and-swap', async () => {
-  const data = { ...empty(), shelf: true, page: 2, annotations: [{ id: 'note', page: 2, quote: 'Quote', text: 'Private note', rects: [], color: 'yellow', language: 'en', created: 1, updated: 1 }] };
+  const data = { ...empty(), rating: 5, shelf: true, page: 2, annotations: [{ id: 'note', page: 2, quote: 'Quote', text: 'Private note', rects: [], color: 'yellow', language: 'en', created: 1, updated: 1 }] };
   const put = await request(`/api/private/records/${id}`, 'PUT', { version: 0, data }, alice);
   assert.equal(put.status, 200, await put.clone().text());
   assert.equal((await put.json()).record.version, 1);
@@ -85,8 +96,10 @@ test('reading records are isolated and concurrent writes use compare-and-swap', 
   const changes = await (await request(`/api/private/records?after=${a.cursor}`, 'GET', undefined, alice)).json();
   assert.equal(changes.records.length, 1); assert.equal(changes.records[0].data.shelf, false);
   assert.equal(changes.records[0].data.annotations.length, 1);
+  assert.equal(changes.records[0].data.rating, 5);
 });
 test('invalid reading data and bad cursor are rejected', async () => {
+  for (const rating of [-1, 6, 2.5, '5', null]) assert.equal((await request(`/api/private/records/${id}`, 'PUT', { version: 2, data: { ...empty(), rating } }, alice)).status, 400);
   assert.equal((await request(`/api/private/records/${id}`, 'PUT', { version: 2, data: { ...empty(), page: 100 } }, alice)).status, 400);
   assert.equal((await request('/api/private/records?after=NaN', 'GET', undefined, alice)).status, 400);
 });

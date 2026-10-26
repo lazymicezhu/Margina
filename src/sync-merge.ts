@@ -33,6 +33,7 @@ export function mergeReading(base: ReadingData, local: ReadingData, remote: Read
     : same([remote.page, remote.opened], [base.page, base.opened]) ? local : local.opened > remote.opened ? local : remote;
   return {
     shelf: choose(base.shelf, local.shelf, remote.shelf), starred: choose(base.starred, local.starred, remote.starred),
+    rating: choose(base.rating ?? 0, local.rating ?? 0, remote.rating ?? 0),
     page: progress.page, opened: progress.opened, bookmarks, annotations: [...notes.values()],
   };
 }

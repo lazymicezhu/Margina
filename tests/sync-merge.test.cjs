@@ -40,3 +40,22 @@ test('newer reading can move backwards and in-flight edits are preserved', () =>
   assert.equal(merge(base, { ...base, page: 2, opened: 200 }, base).page, 2);
   assert.equal(merge(base, { ...base, annotations: [note('during upload')] }, base).annotations.length, 1);
 });
+
+test('ratings survive independent progress edits and legacy records', () => {
+  const base = empty();
+  assert.equal(merge(base, { ...base, rating: 5 }, { ...base, page: 2, opened: 100 }).rating, 5);
+  assert.equal(merge(base, base, { ...base, rating: 4 }).rating, 4);
+  const rated = { ...base, rating: 5 };
+  const cleared = merge(rated, { ...rated, rating: 0 }, { ...rated, annotations: [note('kept')] });
+  assert.equal(cleared.rating, 0); assert.equal(cleared.annotations.length, 1);
+  assert.equal(merge(rated, { ...rated, rating: 2 }, { ...rated, rating: 3 }).rating, 3);
+});
+
+test('a rating acknowledged by the server clears the sync queue', async () => {
+  const { readingData } = await import('../server/validation.mjs');
+  for (const rating of [undefined, 0, 5]) {
+    const sent = { ...empty(), ...(rating === undefined ? {} : { rating }) };
+    const acknowledged = readingData(sent, 10);
+    assert.equal(exports_.equalReading(exports_.mergeReading(sent, sent, acknowledged), acknowledged), true);
+  }
+});

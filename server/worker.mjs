@@ -21,11 +21,27 @@ async function fileResponse(request, env, paper, kind) {
   check(kind !== 'pdf' || !txt, '不是 PDF 文件', 404);
   const key = kind === 'bundle' ? paper.bundle_key : paper.pdf_key;
   check(key, '此文献尚无阅读包', 404);
-  const object = await env.FILES.get(key);
+  // PDF.js requests only the chunks needed for visible first-page thumbnails.
+  const rangeHeader = request.method === 'GET' && kind !== 'bundle' && !txt ? request.headers.get('range') : null;
+  let range;
+  if (rangeHeader) {
+    const match = /^bytes=(\d+)-(\d*)$/.exec(rangeHeader);
+    if (match) {
+      const offset = Number(match[1]);
+      const end = match[2] ? Math.min(Number(match[2]), paper.size - 1) : paper.size - 1;
+      if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(end) || offset > end || offset >= paper.size) {
+        return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${paper.size}`, 'Cache-Control': 'private, no-store' } });
+      }
+      range = { offset, length: end - offset + 1 };
+    }
+  }
+  const object = await env.FILES.get(key, range ? { range } : undefined);
   check(object, '文献文件暂时不可用', 404);
-  return new Response(request.method === 'HEAD' ? null : object.body, { headers: {
+  return new Response(request.method === 'HEAD' ? null : object.body, { status: range ? 206 : 200, headers: {
+    ...(kind !== 'bundle' && !txt ? { 'Accept-Ranges': 'bytes' } : {}),
+    ...(range ? { 'Content-Range': `bytes ${range.offset}-${range.offset + range.length - 1}/${object.size}` } : {}),
     'Content-Type': kind === 'bundle' ? 'application/json; charset=utf-8' : txt ? 'text/plain' : 'application/pdf',
-    'Content-Length': String(object.size), 'Cache-Control': 'private, no-store', 'ETag': object.httpEtag,
+    'Content-Length': String(range?.length ?? object.size), 'Cache-Control': 'private, no-store', 'ETag': object.httpEtag,
     'X-Content-Type-Options': 'nosniff',
     ...(kind !== 'bundle' ? { 'Content-Disposition': txt ? 'attachment; filename="book.txt"' : 'inline; filename="paper.pdf"' } : {}),
   } });

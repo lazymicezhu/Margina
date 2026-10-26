@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowDownToLine, ArrowRight, BookOpen, Check, ChevronRight, Cloud, FolderOpen, FolderPlus, LockKeyhole, Pencil, Library, LoaderCircle, LogIn, NotebookPen, Plus, RefreshCw, Search, Settings2, Trash2, Upload, User, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowRight, BookOpen, Check, ChevronRight, Cloud, FolderOpen, FolderPlus, LockKeyhole, Pencil, Library, LoaderCircle, LogIn, NotebookPen, Plus, RefreshCw, Search, Settings2, Star, Trash2, Upload, User, X } from 'lucide-react';
 import type { Book } from './types';
 import type { AccountState, Paper, ReadingData, Session } from './cloud-types';
 import { emptyReading } from './cloud-types';
@@ -17,6 +17,7 @@ import { CopyButton } from './interactions';
 import { useShelf, type ShelfFolder } from './useShelf';
 import { bookLocked } from './shelf-lock';
 import { FolderEditor, FolderUnlock, ShelfBookEditor } from './ShelfDialogs';
+import PaperCover from './PaperCover';
 import './cloud.css';
 
 type View = 'catalog' | 'shelf' | 'notes' | 'uploads';
@@ -70,7 +71,7 @@ export default function App() {
   const displayTitle = (id: string) => shelf.item(id)?.remark || lookup(id)?.title || '文献';
   const dirty = Object.values(account.records).filter(r => r.dirty).length;
   const shelfIds = Object.keys(account.records).filter(id => account.records[id].data.shelf)
-    .sort((a, b) => account.records[b].data.opened - account.records[a].data.opened || a.localeCompare(b));
+    .sort((a, b) => (account.records[b].data.rating ?? 0) - (account.records[a].data.rating ?? 0) || account.records[b].data.opened - account.records[a].data.opened || a.localeCompare(b));
   const personalData = (id: string) => account.records[id]?.data || emptyReading();
   const lookup = (id: string) => known[id] || cached.find(b => b.id === id) && paperFromBook(cached.find(b => b.id === id)!);
   const notify = (text: string) => setMessage(text);
@@ -258,6 +259,15 @@ export default function App() {
     const id = userRef.current.id;
     await run('正在加入书架…', async () => { await shelf.refresh(); if (bookLocked(paper.id)) throw new Error('请先解锁文件夹'); await editReading(id, paper.id, { shelf: true }); notify('已加入我的书架'); });
   }
+  async function rateBook(paper: Paper, rating: number) {
+    const id = userRef.current?.id;
+    if (!id) { setLogin(true); return; }
+    await run('正在保存评分…', async () => {
+      if (bookLocked(paper.id)) throw new Error('请先解锁文件夹');
+      await editReading(id, paper.id, { rating });
+      await reloadAccount(id);
+    });
+  }
   async function doUpload() {
     const user = userRef.current;
     if (!user) { setLogin(true); return; }
@@ -334,8 +344,30 @@ export default function App() {
                   const title = view === 'shelf' ? shelf.item(paper.id)?.remark || paper.title : paper.title;
                   const data = accountId && shelf.locked(paper.id) ? emptyReading() : personalData(paper.id); const cache = cached.find(b => b.id === paper.id);
                   return <article className="book-card" key={paper.id}>
-                    <button className="book-cover public-cover" aria-label={`阅读 ${title}`} disabled={!!busy || (paper.removed && !cache)} onClick={() => void openPaper(paper)}><div className="cover-top"><span>{paper.removed ? '已撤下' : paper.visibility === 'private' ? '私密' : paper.format === 'txt' ? 'TXT 文本' : paper.bilingual ? '中英对照' : 'PDF 文献'}</span></div>{cache ? <div className="paper-thumbnail"><img src={cache.cover} alt="" /></div> : <div className="typographic-cover"><BookOpen size={28} strokeWidth={1.2} /><strong>{title}</strong><span>{paper.author || 'Margina 书库'}</span></div>}<div className="cover-bottom"><span>{paper.format === 'txt' ? 'TXT 阅读' : paper.hasBundle ? 'PDF + 段落阅读' : '原版 PDF'}</span><span>{paper.pages} 页</span></div></button>
-                    <div className="book-info"><button className="book-title" onClick={() => void openPaper(paper)} disabled={!!busy || (paper.removed && !cache)}>{title}</button><p className="book-author">{paper.author || paper.fileName}</p><div className="book-meta"><span>{sizeLabel(paper.size)}</span><span>{data.opened ? `读至第 ${data.page} 页` : '尚未阅读'}</span></div><div className="public-card-actions"><button className={`secondary-button ${data.shelf ? 'on-shelf' : ''}`} disabled={!!busy || (paper.removed && !data.shelf)} onClick={() => data.shelf ? setRemoveShelf(paper) : void addToShelf(paper)}>{view === 'shelf' ? <Trash2 size={15} /> : data.shelf ? <Check size={15} /> : <Plus size={15} />}{view === 'shelf' ? '移出书架' : data.shelf ? '已加入书架' : '加入书架'}</button>{view === 'shelf' && <button className="icon-button" aria-label={`书名备注与归类 ${title}`} onClick={() => setEditBook(lookup(paper.id) || paper)}><Pencil size={17} /></button>}{view === 'uploads' && !paper.removed && <button className="icon-button" aria-label={`撤下 ${title}`} onClick={() => setWithdraw(paper)}><Trash2 size={16} /></button>}</div>{data.opened > 0 && <div className="progress-track"><div style={{ width: `${data.page / paper.pages * 100}%` }} /></div>}</div>
+                    <button className="book-cover public-cover" aria-label={`阅读 ${title}`} disabled={!!busy || (paper.removed && !cache)} onClick={() => void openPaper(paper)}>
+                      {(paper.removed || paper.visibility === 'private') && <div className="cover-top"><span>{paper.removed ? '已撤下' : '私密'}</span></div>}
+                      <PaperCover key={`${accountId || 'guest'}:${paper.id}`} paper={paper} title={title} cachedCover={cache?.cover} allowed={paper.visibility !== 'private' || (!!current.user && !shelf.locked(paper.id) && (paper.privateOwner === accountId || current.user.admin))} />
+                      <div className="cover-bottom"><span>{paper.pages} 页</span></div>
+                    </button>
+                    <div className="book-info">
+                      <button className="book-title" onClick={() => void openPaper(paper)} disabled={!!busy || (paper.removed && !cache)}>{title}</button>
+                      {paper.author && <p className="book-author">{paper.author}</p>}
+                      <div className="book-meta"><span>{sizeLabel(paper.size)}</span><span>{data.opened ? `读至第 ${data.page} 页` : '尚未阅读'}</span></div>
+                      {view === 'shelf' && <div className="shelf-card-tools">
+                        <div className="book-rating" role="group" aria-label={`${title}，${data.rating || 0} 星评分`}>
+                          {[1, 2, 3, 4, 5].map(star => <button key={star} className={`rating-star ${(data.rating || 0) >= star ? 'filled' : ''}`} disabled={!!busy} aria-label={data.rating === star ? `取消 ${star} 星评分` : `评为 ${star} 星`} aria-pressed={data.rating === star} title={data.rating === star ? '再次点击取消评分' : `${star} 星`} onClick={() => void rateBook(paper, data.rating === star ? 0 : star)}><Star size={19} fill={(data.rating || 0) >= star ? 'currentColor' : 'none'} /></button>)}
+                        </div>
+                        <div className="shelf-card-icons">
+                          <button className="icon-button" aria-label={`书名备注与归类 ${title}`} title="书名备注与归类" disabled={!!busy} onClick={() => setEditBook(lookup(paper.id) || paper)}><Pencil size={17} /></button>
+                          <button className="icon-button" aria-label={`移出书架 ${title}`} title="移出书架" disabled={!!busy} onClick={() => setRemoveShelf(paper)}><Trash2 size={17} /></button>
+                        </div>
+                      </div>}
+                      {view !== 'shelf' && <div className="public-card-actions">
+                        <button className={`secondary-button ${data.shelf ? 'on-shelf' : ''}`} disabled={!!busy || (paper.removed && !data.shelf)} onClick={() => data.shelf ? setRemoveShelf(paper) : void addToShelf(paper)}>{data.shelf ? <Check size={15} /> : <Plus size={15} />}{data.shelf ? '已加入书架' : '加入书架'}</button>
+                        {view === 'uploads' && !paper.removed && <button className="icon-button" aria-label={`撤下 ${title}`} onClick={() => setWithdraw(paper)}><Trash2 size={16} /></button>}
+                      </div>}
+                      {data.opened > 0 && <div className="progress-track"><div style={{ width: `${data.page / paper.pages * 100}%` }} /></div>}
+                    </div>
                   </article>;
                 })}</div>
                 {!visible.length && !catalogError && !(view === 'shelf' && !folderId && shelf.folders.length) && <Empty text={query ? '没有找到匹配的文献。' : view === 'shelf' ? folderId ? '文件夹里还没有书籍。' : '书架还是空的，去书库挑选想读的文献吧。' : view === 'uploads' ? '你还没有上传文献。' : '书库还是空的，登录后分享第一篇文献。'} />}

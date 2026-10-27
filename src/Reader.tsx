@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, BookMarked, BookOpen, Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, FileText, Highlighter, Info, Languages, List, LoaderCircle, Maximize2, Minus, NotebookPen, Pencil, Plus, Search, Trash2, Type, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, BookMarked, BookOpen, Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, FileText, Info, Languages, List, LoaderCircle, Maximize2, Minus, NotebookPen, Pencil, Plus, Search, Trash2, Type, X } from 'lucide-react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { loadPdf } from './pdf';
@@ -11,6 +11,8 @@ import { CopyButton, Disclosure, useSpringFeedback } from './interactions';
 import { randomId } from './browser-compat';
 import { pdfBitmapSize } from './pdf-resolution';
 import { usePageSwipe } from './usePageSwipe';
+import { usePageClick } from './usePageClick';
+import { useSelectionPosition } from './useSelectionPosition';
 import { ContinuousPages, type PageRequest } from './ContinuousPages';
 
 const langLabel = (lang: Language) => lang === 'zh' ? '中文' : lang === 'en' ? '英文' : '对照';
@@ -41,6 +43,7 @@ export default function Reader({ book, pdfSource, onBack, onUpdate, onReload, no
   const [saving, setSaving] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const flowRef = useRef<HTMLDivElement>(null);
+  const selectionPosition = useSelectionPosition(scroller, editor ? null : selection);
   const selectionCallback = useRef(setSelection); selectionCallback.current = setSelection;
   const bookRef = useRef(book); bookRef.current = book;
   const segmentsForPage = (page: number) => isTxt ? (textPages[page - 1] || '').split(/\n[ \t]*\n/).filter(Boolean).map((text, index) => ({ id: `txt-${page}-${index}`, page, source: text, zh: text, keep: false, reason: '', hasFormula: false })) : book.bundle?.segments.filter(s => s.page === page) || [];
@@ -83,6 +86,8 @@ export default function Reader({ book, pdfSource, onBack, onUpdate, onReload, no
     let timer: ReturnType<typeof setTimeout>;
     const read = () => {
       clearTimeout(timer);
+      const current = window.getSelection();
+      if (!editor && (!current || current.isCollapsed || !current.toString().trim() || !flowRef.current?.contains(current.anchorNode) || !flowRef.current.contains(current.focusNode))) setSelection(null);
       timer = setTimeout(() => {
         if (mode !== 'flow' || editor) return;
         const sel = window.getSelection();
@@ -129,7 +134,9 @@ export default function Reader({ book, pdfSource, onBack, onUpdate, onReload, no
     };
     document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey);
   });
-  usePageSwipe(scroller, readingLayout === 'paged' && !editor && !help && !deleting && !panel && !selection && (!pdfError && (isTxt ? textPages.length > 0 : mode === 'flow' || (!!pdf && zoom <= 1))), page, direction => changePage(page + direction));
+  const pageGesturesEnabled = readingLayout === 'paged' && !editor && !help && !deleting && !panel && !selection && (!pdfError && (isTxt ? textPages.length > 0 : mode === 'flow' || (!!pdf && zoom <= 1)));
+  usePageSwipe(scroller, pageGesturesEnabled, page, direction => changePage(page + direction));
+  usePageClick(scroller, pageGesturesEnabled, page, direction => changePage(page + direction));
   function switchLanguage(lang: Language) { setLanguage(lang); setSelection(null); window.getSelection()?.removeAllRanges(); }
   function draft(data?: SelectionData): Annotation {
     return { id: randomId(), page: data?.page || page, quote: data?.quote || '', text: '', rects: data?.rects || [], language: data?.language || language, segmentId: data?.segmentId, color, created:Date.now(),updated:Date.now() };
@@ -176,10 +183,10 @@ export default function Reader({ book, pdfSource, onBack, onUpdate, onReload, no
       <aside className={`reader-panel ${panel?'is-open':''}`}>{panelBody}</aside>
       {panel&&<button className="panel-scrim" aria-label="关闭侧面板" onClick={()=>setPanel(null)}/>}
     </div>
-    {selection&&!editor&&<div className="selection-bar" role="toolbar" aria-label="选中文字操作" onPointerDown={e=>e.preventDefault()}><span className="selection-label">已选 {selection.quote.length} 字</span><div className="swatches">{(['yellow','green','pink'] as MarkColor[]).map(c=><button key={c} className={`swatch ${c} ${color===c?'active':''}`} aria-label={`${c==='yellow'?'黄色':c==='green'?'绿色':'粉色'}高亮`} onClick={()=>setColor(c)}/>)}</div><button disabled={saving} onClick={()=>saveNote(draft(selection)).catch(()=>{})}><Highlighter size={17}/>高亮</button><button onClick={()=>newNote(selection)}><NotebookPen size={17}/>笔记</button><button className="icon-button" aria-label="取消选择" onClick={()=>{setSelection(null);window.getSelection()?.removeAllRanges();}}><X size={16}/></button></div>}
+    {selection&&!editor&&<div ref={selectionPosition.toolbar} style={selectionPosition.style} className="selection-bar" role="toolbar" aria-label="选中文字操作" onPointerDown={e=>e.preventDefault()}><span className="selection-label">已选 {selection.quote.length} 字</span><div className="swatches">{(['yellow','green','pink'] as MarkColor[]).map(c=><button key={c} className={`swatch ${c} ${color===c?'active':''}`} aria-label={`${c==='yellow'?'黄色':c==='green'?'绿色':'粉色'}高亮`} disabled={saving} onClick={()=>{setColor(c);saveNote({...draft(selection),color:c}).catch(()=>{});}}/>)}</div><button disabled={saving} onClick={()=>newNote(selection)}><NotebookPen size={17}/>笔记</button><button className="icon-button" aria-label="取消选择" onClick={()=>{setSelection(null);window.getSelection()?.removeAllRanges();}}><X size={16}/></button></div>}
     {editor&&<NoteEditor note={editor} saving={saving} onCancel={()=>setEditor(null)} onSave={n=>saveNote(n).catch(()=>{})}/>}
     {deleting&&<div className="modal-backdrop"><section className="modal" role="dialog" aria-modal="true" aria-label="删除笔记"><h2>删除这条笔记？</h2><p>相关高亮也会移除。原文和译文不会改变。</p><div className="modal-actions"><button className="secondary-button" onClick={()=>setDeleting(null)}>保留</button><button className="danger-button" onClick={async()=>{try{await onUpdate({annotations:book.annotations.filter(n=>n.id!==deleting)});setDeleting(null);}catch{}}}>删除</button></div></section></div>}
-    {help&&<div className="modal-backdrop" onClick={()=>setHelp(false)}><section className="modal" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="阅读说明"><button className="icon-button modal-close" aria-label="关闭说明" onClick={()=>setHelp(false)}><X size={20}/></button><h2>阅读说明</h2>{isTxt ? <p>可选连续下滑或左右翻页，选中文字记录笔记。</p> : <><p>段落可能有缺漏，图表、公式及修订以最终 PDF 为准。</p><div className="storage-row"><span>PDF 布局识别</span><button className="text-button" onClick={()=>{onUpdate({bilingual:!book.bilingual}).catch(()=>{});setLanguage(book.bilingual?'en':'zh');}}>{book.bilingual?'左右中英对照':'普通单页'} · 切换</button></div><p className="fineprint">左右布局识别有误时可切换。</p></>}</section></div>}
+    {help&&<div className="modal-backdrop" onClick={()=>setHelp(false)}><section className="modal" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="阅读说明"><button className="icon-button modal-close" aria-label="关闭说明" onClick={()=>setHelp(false)}><X size={20}/></button><h2>阅读说明</h2><p>左右翻页模式下，电脑鼠标点击正文左半区上一页、右半区下一页；手机可左右滑动。选中文字后，点击颜色直接高亮。</p>{isTxt ? <p>可选连续下滑或左右翻页，选中文字记录笔记。</p> : <><p>段落可能有缺漏，图表、公式及修订以最终 PDF 为准。</p><div className="storage-row"><span>PDF 布局识别</span><button className="text-button" onClick={()=>{onUpdate({bilingual:!book.bilingual}).catch(()=>{});setLanguage(book.bilingual?'en':'zh');}}>{book.bilingual?'左右中英对照':'普通单页'} · 切换</button></div><p className="fineprint">左右布局识别有误时可切换。</p></>}</section></div>}
   </div>;
 }
 

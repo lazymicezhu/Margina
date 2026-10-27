@@ -1,13 +1,22 @@
-import { useEffect, useRef, type RefObject } from 'react';
+import { useLayoutEffect, useRef, type RefObject } from 'react';
 
 export function usePageClick(ref: RefObject<HTMLDivElement | null>, enabled: boolean, page: number, totalPages: number, turn: (direction: number) => void) {
   const turnRef = useRef(turn); turnRef.current = turn;
-  const pointer = useRef<{ x: number; y: number } | null>(null);
-  useEffect(() => {
+  const pointer = useRef<{ x: number; y: number; modified: boolean } | null>(null);
+  useLayoutEffect(() => {
     const root = ref.current;
-    if (!root || !enabled) return;
+    if (!root) return;
+    const setCursor = (value?: 'previous' | 'next') => {
+      if (root.dataset.pageCursor === value) return;
+      if (value) root.dataset.pageCursor = value;
+      else delete root.dataset.pageCursor;
+    };
+    if (!enabled) { setCursor(); return; }
     let press: { x: number; y: number; time: number } | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let frame = 0;
+    let paper: Element | null = null;
+    let bounds: { left: number; right: number; paperLeft: number; paperRight: number } | null = null;
     const blocked = () => (window.visualViewport?.scale || 1) > 1.05 || !!window.getSelection()?.toString().trim();
     const excluded = (target: EventTarget | null) => {
       if (!(target instanceof Element)) return true;
@@ -15,33 +24,54 @@ export function usePageClick(ref: RefObject<HTMLDivElement | null>, enabled: boo
       const overflow = target.closest('.pdf-overflow');
       return !!overflow && overflow.scrollWidth > overflow.clientWidth + 2;
     };
-    const clearCursor = () => { delete root.dataset.pageCursor; };
     const directionAt = (x: number) => {
-      const box = root.getBoundingClientRect();
-      if (x < box.left || x >= box.left + root.clientWidth) return 0;
-      const paper = root.querySelector('.pdf-stage, .flow-document')?.getBoundingClientRect();
-      if (!paper || paper.width <= 0) return 0;
-      // Use the actual paper edges, so text and whitespace inside the page
-      // keep their native selection behavior at every window size.
-      const direction = x < paper.left ? -1 : x >= paper.right ? 1 : 0;
-      if (!direction) return 0;
-      return page + direction >= 1 && page + direction <= totalPages ? direction : 0;
+      if (!bounds || x < bounds.left || x >= bounds.right) return 0;
+      const direction = x < bounds.paperLeft ? -1 : x >= bounds.paperRight ? 1 : 0;
+      return direction && page + direction >= 1 && page + direction <= totalPages ? direction : 0;
     };
     const showCursor = (x: number, target: EventTarget | null) => {
       const direction = directionAt(x);
-      if (!direction || blocked() || excluded(target)) { clearCursor(); return; }
-      root.dataset.pageCursor = direction < 0 ? 'previous' : 'next';
+      setCursor(direction && !blocked() && !excluded(target) ? direction < 0 ? 'previous' : 'next' : undefined);
     };
+    const refreshCursor = () => {
+      const point = pointer.current;
+      if (!point || point.modified) { setCursor(); return; }
+      const target = document.elementFromPoint(point.x, point.y);
+      if (root.contains(target)) showCursor(point.x, target);
+      else setCursor();
+    };
+    // Cache geometry only when layout changes. Mouse movement merely checks
+    // these boundaries and writes a cursor only on an actual region change.
+    const measure = () => {
+      const nextPaper = root.querySelector('.pdf-stage, .flow-document');
+      if (paper !== nextPaper) {
+        if (paper) resizeObserver.unobserve(paper);
+        paper = nextPaper;
+        if (paper) resizeObserver.observe(paper);
+      }
+      const box = root.getBoundingClientRect(), sheet = paper?.getBoundingClientRect();
+      bounds = sheet && sheet.width > 0 ? { left: box.left, right: box.left + root.clientWidth, paperLeft: sheet.left, paperRight: sheet.right } : null;
+      refreshCursor();
+    };
+    const scheduleMeasure = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
+    const resizeObserver = new ResizeObserver(scheduleMeasure);
+    const contentObserver = new MutationObserver(scheduleMeasure);
+    resizeObserver.observe(root);
+    contentObserver.observe(root, { childList: true, subtree: true });
+    measure();
     const hover = (event: PointerEvent) => {
       if (event.pointerType !== 'mouse') return;
-      pointer.current = { x: event.clientX, y: event.clientY };
-      if (event.buttons || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) { clearCursor(); return; }
+      const modified = event.ctrlKey || event.metaKey || event.shiftKey || event.altKey;
+      pointer.current = { x: event.clientX, y: event.clientY, modified };
+      if (modified) { setCursor(); return; }
       showCursor(event.clientX, event.target);
     };
-    const cancel = () => { press = null; clearTimeout(timer); clearCursor(); };
-    const leave = () => { pointer.current = null; cancel(); };
+    // Cancelling a click must not briefly replace a valid gutter cursor.
+    const cancel = () => { press = null; clearTimeout(timer); };
+    const leave = () => { pointer.current = null; cancel(); setCursor(); };
     const down = (event: PointerEvent) => {
       cancel();
+      hover(event);
       if (event.pointerType !== 'mouse' || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || blocked() || excluded(event.target)) return;
       if (!directionAt(event.clientX)) return;
       press = { x: event.clientX, y: event.clientY, time: event.timeStamp };
@@ -58,34 +88,39 @@ export function usePageClick(ref: RefObject<HTMLDivElement | null>, enabled: boo
       // Leave time for a second click to select a word before changing pages.
       timer = setTimeout(() => { if (!blocked()) turnRef.current(direction); }, 300);
     };
-    const selectionChanged = () => { if (blocked()) cancel(); };
-    if (pointer.current) {
-      const { x, y } = pointer.current;
-      const target = document.elementFromPoint(x, y);
-      if (root.contains(target)) showCursor(x, target);
-    }
+    const selectionChanged = () => { if (blocked()) cancel(); refreshCursor(); };
+    const scroll = () => { cancel(); scheduleMeasure(); };
     root.addEventListener('pointerover', hover);
     root.addEventListener('pointerdown', down);
     root.addEventListener('pointermove', move);
     root.addEventListener('pointerup', hover);
-    root.addEventListener('pointercancel', cancel);
+    root.addEventListener('pointercancel', leave);
     root.addEventListener('pointerleave', leave);
     root.addEventListener('click', click);
     root.addEventListener('dblclick', cancel);
-    root.addEventListener('scroll', cancel, true);
+    root.addEventListener('scroll', scroll, true);
     document.addEventListener('selectionchange', selectionChanged);
+    window.addEventListener('resize', scheduleMeasure);
+    window.visualViewport?.addEventListener('resize', scheduleMeasure);
+    window.visualViewport?.addEventListener('scroll', scheduleMeasure);
     return () => {
-      cancel();
+      // The next layout effect updates the cursor before paint, preserving it
+      // across page turns; disabling navigation explicitly clears it above.
+      cancel(); cancelAnimationFrame(frame);
+      resizeObserver.disconnect(); contentObserver.disconnect();
       root.removeEventListener('pointerover', hover);
       root.removeEventListener('pointerdown', down);
       root.removeEventListener('pointermove', move);
       root.removeEventListener('pointerup', hover);
-      root.removeEventListener('pointercancel', cancel);
+      root.removeEventListener('pointercancel', leave);
       root.removeEventListener('pointerleave', leave);
       root.removeEventListener('click', click);
       root.removeEventListener('dblclick', cancel);
-      root.removeEventListener('scroll', cancel, true);
+      root.removeEventListener('scroll', scroll, true);
       document.removeEventListener('selectionchange', selectionChanged);
+      window.removeEventListener('resize', scheduleMeasure);
+      window.visualViewport?.removeEventListener('resize', scheduleMeasure);
+      window.visualViewport?.removeEventListener('scroll', scheduleMeasure);
     };
   }, [ref, enabled, page, totalPages]);
 }

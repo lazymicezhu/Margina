@@ -19,7 +19,12 @@ export function usePageClick(ref: RefObject<HTMLDivElement | null>, enabled: boo
     const directionAt = (x: number) => {
       const box = root.getBoundingClientRect();
       if (x < box.left || x >= box.left + root.clientWidth) return 0;
-      const direction = x < box.left + root.clientWidth / 2 ? -1 : 1;
+      const paper = root.querySelector('.pdf-stage, .flow-document')?.getBoundingClientRect();
+      if (!paper || paper.width <= 0) return 0;
+      // Use the actual paper edges, so text and whitespace inside the page
+      // keep their native selection behavior at every window size.
+      const direction = x < paper.left ? -1 : x >= paper.right ? 1 : 0;
+      if (!direction) return 0;
       return page + direction >= 1 && page + direction <= totalPages ? direction : 0;
     };
     const showCursor = (x: number, target: EventTarget | null) => {
@@ -38,6 +43,7 @@ export function usePageClick(ref: RefObject<HTMLDivElement | null>, enabled: boo
     const down = (event: PointerEvent) => {
       cancel();
       if (event.pointerType !== 'mouse' || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || blocked() || excluded(event.target)) return;
+      if (!directionAt(event.clientX)) return;
       press = { x: event.clientX, y: event.clientY, time: event.timeStamp };
     };
     const move = (event: PointerEvent) => {

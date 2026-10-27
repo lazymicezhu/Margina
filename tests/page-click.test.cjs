@@ -18,6 +18,7 @@ function setup(enabled = true) {
   const root = {
     clientWidth: 600,
     dataset: {},
+    querySelector: () => ({ getBoundingClientRect: () => ({ left: 260, right: 540, width: 280 }) }),
     getBoundingClientRect: () => ({ left: 100, width: 615 }),
     addEventListener: (name, fn) => listeners.set(name, fn),
     removeEventListener: name => listeners.delete(name),
@@ -36,7 +37,7 @@ function setup(enabled = true) {
   return { event, turns, viewport, listeners, documentListeners, cleanup: () => cleanup?.(), select(value) { selected = value; documentListeners.get('selectionchange')?.(); }, flush() { for (const fn of timers.values()) fn(); timers.clear(); } };
 }
 
-test('mouse clicks turn by reading area midpoint, after the double-click grace period', () => {
+test('mouse clicks in paper gutters turn pages after the double-click grace period', () => {
   const s = setup();
   s.event('pointerdown'); s.event('click');
   assert.deepEqual(s.turns, []); s.flush(); assert.deepEqual(s.turns, [1]);
@@ -70,4 +71,18 @@ test('disabled or unmounted reader removes listeners and cancels pending page ch
   assert.equal(setup(false).listeners.size, 0);
   const s = setup(); s.event('pointerdown'); s.event('click'); s.cleanup(); s.flush();
   assert.equal(s.listeners.size, 0); assert.equal(s.documentListeners.size, 0); assert.deepEqual(s.turns, []);
+});
+
+
+test('paper interior and drags starting on paper never turn pages', () => {
+  for (const x of [260, 300, 400, 539]) {
+    const s = setup();
+    s.event('pointerdown', { clientX: x });
+    s.event('click', { clientX: x }); s.flush();
+    assert.deepEqual(s.turns, []);
+  }
+  const s = setup();
+  s.event('pointerdown', { clientX: 539 });
+  s.event('click', { clientX: 541 }); s.flush();
+  assert.deepEqual(s.turns, []);
 });

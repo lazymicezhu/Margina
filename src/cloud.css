@@ -81,19 +81,22 @@
 
 .cover-content { position: absolute; inset: 0; }
 .cloud-shell .cover-bottom { justify-content: flex-end; }
-.shelf-card-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-.book-rating, .shelf-card-icons { display: flex; align-items: center; }
-.book-rating { flex-shrink: 0; }
-.rating-star { display: grid; place-items: center; width: 32px; height: 44px; padding: 0; color: var(--muted); border-radius: 6px; }
-.rating-star.filled { color: var(--green); }
-.rating-star:hover { background: var(--surface); }
-.rating-star:disabled { opacity: .5; }
-.shelf-card-icons { margin-left: auto; gap: 2px; }
+.shelf-card-tools { display: flex; justify-content: flex-end; margin-top: 12px; }
+.shelf-card-icons { display: flex; align-items: center; margin-left: auto; gap: 2px; }
 .shelf-card-icons .icon-button { width: 36px; height: 44px; }
-.rating-star:focus-visible, .shelf-card-icons .icon-button:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+.shelf-rating-button { color: var(--muted); }
+.shelf-rating-button.is-rated { color: var(--green); }
+.shelf-card-icons .icon-button:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
 .cloud-shell .public-cover .cover-bottom > span { display: block; }
-.book-rating { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); width: 160px; max-width: 100%; min-width: 0; }
-.rating-star { width: 100%; }
+.shelf-card-icons { width: 100%; justify-content: flex-end; min-width: 0; }
+.shelf-card-icons > .icon-button { flex-shrink: 0; }
+.shelf-rating { flex: 0 0 36px; min-width: 0; }
+.shelf-rating.expanded { flex: 0 1 180px; }
+.shelf-rating-choices { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-radius: 7px; background: var(--surface); }
+.inline-rating-star { display: grid; place-items: center; min-width: 0; height: 44px; padding: 0; color: var(--muted); border-radius: 6px; }
+.inline-rating-star.is-rated { color: var(--green); }
+.inline-rating-star:hover { background: var(--surface-raised); }
+.inline-rating-star:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
 
 /* A small red ribbon aligned with the upper edge of the cover artwork. */
 .book-note-count { position: absolute; top: 22%; right: 0; z-index: 2; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 58px; padding: 8px 13px 8px 18px; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 7px 50%); color: #fff; background: #b8443e; font-size: 12px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }

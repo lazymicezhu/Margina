@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowDownToLine, ArrowRight, BookOpen, Check, ChevronRight, Cloud, FolderOpen, FolderPlus, LockKeyhole, Pencil, Library, LoaderCircle, LogIn, NotebookPen, Plus, RefreshCw, Search, Settings2, Star, Trash2, Upload, User, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowRight, BookOpen, Check, ChevronRight, Cloud, FolderOpen, FolderPlus, LockKeyhole, Pencil, Library, LoaderCircle, LogIn, NotebookPen, Plus, RefreshCw, Search, Settings2, Trash2, Upload, User, X } from 'lucide-react';
 import type { Book } from './types';
 import type { AccountState, CatalogFolder, Paper, ReadingData, Session } from './cloud-types';
 import { emptyReading } from './cloud-types';
@@ -14,6 +14,7 @@ import AdminPanel from './AdminPanel';
 import AuthForm from './AuthForm';
 import { Logo } from './LocalLibrary';
 import BookNotes, { NoteCount } from './BookNotes';
+import ShelfRating from './ShelfRating';
 import { useShelf, type ShelfFolder } from './useShelf';
 import { bookLocked } from './shelf-lock';
 import { FolderEditor, FolderUnlock, ShelfBookEditor } from './ShelfDialogs';
@@ -84,6 +85,7 @@ export default function App() {
   const [unlockFolder, setUnlockFolder] = useState<ShelfFolder | null>(null);
   const [deleteFolder, setDeleteFolder] = useState<ShelfFolder | null>(null);
   const [editBook, setEditBook] = useState<Paper | null>(null);
+  const [ratingBook, setRatingBook] = useState<Paper | null>(null);
   const folder = shelf.folders.find(f => f.id === folderId);
   const dirty = Object.values(account.records).filter(r => r.dirty).length;
   const shelfIds = Object.keys(account.records).filter(id => account.records[id].data.shelf)
@@ -207,7 +209,7 @@ export default function App() {
     setUpload(false); setFiles([]); setUploadCatalogFolder(''); setUploadShelfFolder('');
     setCatalogEditor(null); setCatalogDelete(null); setCatalogMove(null);
     setCatalogFoldersReady(false); setCatalogFolders([]); catalogFoldersSerial.current++;
-    setFolderId(null); setFolderEditor(null); setUnlockFolder(null); setEditBook(null); setDeleteFolder(null);
+    setFolderId(null); setFolderEditor(null); setUnlockFolder(null); setEditBook(null); setRatingBook(null); setDeleteFolder(null);
     setActive(null); setPdfSource(undefined); setKnown(old => Object.fromEntries(Object.entries(old).filter(([, paper]) => paper.visibility !== 'private'))); setAccount(freshAccount()); setSyncError(''); setSyncing(false); setPaused(false);
     if (!accountId) return;
     let cancelled = false;
@@ -229,6 +231,7 @@ export default function App() {
     if (accountId && active && shelf.locked(active.id)) { navigation.current?.back(); setActive(null); setPdfSource(undefined); }
     if (folder && folder.locked) setFolderId(null);
     if (editBook && shelf.locked(editBook.id)) setEditBook(null);
+    if (ratingBook && shelf.locked(ratingBook.id)) setRatingBook(null);
   }, [shelf.ready, shelf.folders, shelf.items]);
   useEffect(() => {
     if (!accountId) return;
@@ -358,8 +361,8 @@ export default function App() {
   }
   async function rateBook(paper: Paper, rating: number) {
     const id = userRef.current?.id;
-    if (!id) { setLogin(true); return; }
-    await run('正在保存评分…', async () => {
+    if (!id) { setLogin(true); return false; }
+    return run('正在保存评分…', async () => {
       if (bookLocked(paper.id)) throw new Error('请先解锁文件夹');
       await editReading(id, paper.id, { rating });
       await reloadAccount(id);
@@ -481,10 +484,8 @@ export default function App() {
                       {paper.author && <p className="book-author">{paper.author}</p>}
                       <div className="book-meta"><span>{unresolved ? '书籍信息待更新' : sizeLabel(paper.size)}</span><span>{data.opened ? `读至第 ${data.page} 页` : '尚未阅读'}</span></div>
                       {view === 'shelf' && <div className="shelf-card-tools">
-                        <div className="book-rating" role="group" aria-label={`${title}，${data.rating || 0} 星评分`}>
-                          {[1, 2, 3, 4, 5].map(star => <button key={star} className={`rating-star ${(data.rating || 0) >= star ? 'filled' : ''}`} disabled={!!busy} aria-label={data.rating === star ? `取消 ${star} 星评分` : `评为 ${star} 星`} aria-pressed={data.rating === star} title={data.rating === star ? '再次点击取消评分' : `${star} 星`} onClick={() => void rateBook(paper, data.rating === star ? 0 : star)}><Star size={19} fill={(data.rating || 0) >= star ? 'currentColor' : 'none'} /></button>)}
-                        </div>
                         <div className="shelf-card-icons">
+                          <ShelfRating key={`${accountId}:${paper.id}`} title={title} rating={data.rating || 0} expanded={ratingBook?.id === paper.id} busy={!!busy} open={() => setRatingBook(paper)} close={() => setRatingBook(current => current?.id === paper.id ? null : current)} change={rating => void rateBook(paper, rating).then(saved => { if (saved) setRatingBook(current => current?.id === paper.id ? null : current); })} />
                           <button className="icon-button" aria-label={`书名备注与归类 ${title}`} title="书名备注与归类" disabled={!!busy} onClick={() => setEditBook(lookup(paper.id) || paper)}><Pencil size={17} /></button>
                           <button className="icon-button" aria-label={`移出书架 ${title}`} title="移出书架" disabled={!!busy} onClick={() => setRemoveShelf(paper)}><Trash2 size={17} /></button>
                         </div>

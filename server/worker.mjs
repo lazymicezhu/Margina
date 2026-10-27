@@ -119,6 +119,19 @@ export default {
       await rememberUser(env, user);
       if (path.startsWith('/api/private/admin/')) return await adminRequest(request, env, user, { json, publicPaper, publicRecord, discard });
       const shelf = await shelfAccess(request, env, user);
+      if (path === '/api/private/metadata' && request.method === 'GET') {
+        const ids = [...new Set((url.searchParams.get('ids') || '').split(','))];
+        check(ids.length <= 40 && ids.every(id => /^[a-f0-9]{64}$/.test(id)), '文献列表不正确');
+        const { results } = await env.DB.prepare(`${paperWithFolder} WHERE p.id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all();
+        const papers = [], unavailable = [], locked = [];
+        for (const id of ids) {
+          if (shelf.blockedBooks.has(id)) { locked.push(id); continue; }
+          const paper = results.find(p => p.id === id);
+          if (!canRead(paper, user) || paper.removed) unavailable.push(id);
+          else papers.push(publicPaper(paper, user));
+        }
+        return json({ papers, unavailable, locked });
+      }
       if (path.startsWith('/api/private/shelf')) return await shelfRequest(request, env, user, shelf, json);
       if (path.startsWith('/api/private/catalog/')) return await catalogFolderRequest(request, env, user, shelf, json);
       const privateFile = path.match(/^\/api\/private\/files\/([a-f0-9]{64})(?:\/(file|bundle))?$/);

@@ -19,6 +19,7 @@ import { bookLocked } from './shelf-lock';
 import { FolderEditor, FolderUnlock, ShelfBookEditor } from './ShelfDialogs';
 import { CatalogFolderEditor, UploadFolderPicker } from './CatalogFolders';
 import PaperCover from './PaperCover';
+import { usePaperMetadata } from './usePaperMetadata';
 import './cloud.css';
 
 type View = 'catalog' | 'shelf' | 'notes' | 'uploads';
@@ -86,7 +87,13 @@ export default function App() {
   const shelfIds = Object.keys(account.records).filter(id => account.records[id].data.shelf)
     .sort((a, b) => (account.records[b].data.rating ?? 0) - (account.records[a].data.rating ?? 0) || account.records[b].data.opened - account.records[a].data.opened || a.localeCompare(b));
   const personalData = (id: string) => account.records[id]?.data || emptyReading();
-  const lookup = (id: string) => known[id] || cached.find(b => b.id === id) && paperFromBook(cached.find(b => b.id === id)!);
+  const metadata = usePaperMetadata(accountId, shelf.ready ? Object.keys(account.records).filter(id => !shelf.locked(id)) : []);
+  const lookup = (id: string): Paper | undefined => {
+    const local = cached.find(b => b.id === id && (!b.privateOwner || b.privateOwner === accountId || current.user?.admin));
+    const paper = metadata.papers[id] || known[id] || (local && paperFromBook(local));
+    if (!paper || (paper.visibility === 'private' && (!accountId || shelf.locked(id) || (paper.privateOwner !== accountId && !current.user?.admin)))) return undefined;
+    return metadata.status[id] === 'unavailable' ? { ...paper, removed: true } : paper;
+  };
   const notify = (text: string) => setMessage(text);
 
   useEffect(() => { if (message) { const timer = setTimeout(() => setMessage(''), 6000); return () => clearTimeout(timer); } }, [message]);
@@ -180,19 +187,6 @@ export default function App() {
     if (view === 'uploads') void refreshUploads();
     else setLoading(false);
   }, [query, view, accountId, catalogFolderId]);
-  useEffect(() => {
-    if (!accountId) return;
-    let cancelled = false;
-    const missing = Object.keys(account.records).filter(id => !known[id] && !bookLocked(id));
-    // Resolve saved shelf metadata without downloading PDFs.
-    void (async () => {
-      for (const id of missing) {
-        try { const paper = await getPaper(id); if (!cancelled) setKnown(old => ({ ...old, [id]: paper })); }
-        catch { /* A cached copy can still be read after withdrawal or offline. */ }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [accountId, account, shelf.ready, shelf.items]);
   useEffect(() => {
     if (accountId && active && shelf.locked(active.id)) { setActive(null); setPdfSource(undefined); }
     if (folder && folder.locked) setFolderId(null);
@@ -380,7 +374,7 @@ export default function App() {
     else window.location.assign('/cdn-cgi/access/logout');
   }
   const ownRecords = Object.entries(account.records).filter(([id]) => !shelf.locked(id));
-  const listed = view === 'shelf' ? shelfIds.filter(id => !shelf.locked(id) && (shelf.folders.some(f => f.id === shelf.item(id)?.folderId) ? shelf.item(id)?.folderId : null) === folderId).map(id => lookup(id) || { id, title: '暂不可用文献', author: '', fileName: '', size: 0, pages: personalData(id).page, bilingual: false, hasBundle: false, created: 0, updated: 0, removed: true } as Paper) : papers;
+  const listed = view === 'shelf' ? shelfIds.filter(id => !shelf.locked(id) && (shelf.folders.some(f => f.id === shelf.item(id)?.folderId) ? shelf.item(id)?.folderId : null) === folderId).map(id => lookup(id) || { id, title: metadata.status[id] === 'unavailable' ? '文献已撤下或无权访问' : metadata.status[id] === 'error' ? '书籍信息加载失败' : '正在加载书籍信息…', author: '', fileName: '', size: 0, pages: personalData(id).page, bilingual: false, hasBundle: false, created: 0, updated: 0, removed: metadata.status[id] === 'unavailable' } as Paper) : papers;
   const visible = view === 'catalog' ? listed : listed.filter(p => !shelf.locked(p.id) && `${p.title} ${shelf.item(p.id)?.remark || ''} ${p.author}`.toLowerCase().includes(query.toLowerCase()));
   const titles = { catalog: '书库', shelf: '我的书架', notes: '我的笔记', uploads: '我的上传' };
   const navigate = (next: View) => { setView(next); setQuery(''); setFolderId(null); setCatalogFolderId(null); if (accountId) void shelf.refresh().catch(() => {}); };
@@ -389,7 +383,7 @@ export default function App() {
 
   return <>
     {active ? <Reader key={`${accountId || 'guest'}:${active.id}`} book={active} pdfSource={pdfSource} onBack={() => { setActive(null); setPdfSource(undefined); void listBooks().then(setCached); }} onUpdate={updateReading} onReload={reloadActivePdf} notify={notify} /> :
-      adminOpen ? current.user?.admin ? <AdminPanel key={accountId} user={current.user} revision={adminRevision} onClose={closeAdmin} onUpload={openUpload} onOrganize={openCatalogMove} onChanged={() => { setKnown({}); void refreshCatalogFolders(); }} /> : <main className="admin-shell"><button className="text-button" onClick={closeAdmin}><ArrowRight size={17} />返回书库</button><div className="empty-state"><h1>管理后台</h1>{current.user ? <p>需要管理员权限</p> : <button className="primary-button" onClick={() => setLogin(true)}>登录</button>}</div></main> :
+      adminOpen ? current.user?.admin ? <AdminPanel key={accountId} user={current.user} revision={adminRevision} onClose={closeAdmin} onUpload={openUpload} onOrganize={openCatalogMove} onChanged={() => { setKnown({}); metadata.retry(); void refreshCatalogFolders(); }} /> : <main className="admin-shell"><button className="text-button" onClick={closeAdmin}><ArrowRight size={17} />返回书库</button><div className="empty-state"><h1>管理后台</h1>{current.user ? <p>需要管理员权限</p> : <button className="primary-button" onClick={() => setLogin(true)}>登录</button>}</div></main> :
       <div className="app-shell cloud-shell">
         <aside className="sidebar"><Logo /><nav aria-label="主导航">
           <button className={`nav-item ${view === 'catalog' ? 'active' : ''}`} onClick={() => navigate('catalog')}><Library size={19} />书库</button>
@@ -404,7 +398,7 @@ export default function App() {
             {current.local && <div className="cloud-notice"><span className="status-dot" /><span>本地预览 · 文件与测试账号仅在这台电脑的预览服务中保存</span></div>}
             {current.user && (dirty > 0 || syncError) && <div className="cloud-notice" role="status"><span>{syncError || `${dirty} 篇文献有待同步的个人记录${paused ? '，自动同步已暂停' : ''}`}</span><button className="text-button" disabled={syncing} onClick={() => void syncNow()}><RefreshCw size={14} className={syncing ? 'spin' : ''} />{syncing ? '同步中' : '重试同步'}</button></div>}
             {privateView ? <div className="empty-state"><BookOpen size={32} /><h3>登录后拥有自己的书架</h3><p>公开书库无需登录即可阅读。收藏、上传和跨设备同步需要登录。</p><button className="primary-button" onClick={() => setLogin(true)}>登录</button></div> : <>
-              {view !== 'notes' && <div className="collection-controls"><label className="search cloud-search"><Search size={17} /><input aria-label="搜索书库" placeholder="搜索标题、作者…" value={query} onChange={event => setQuery(event.target.value)} />{query && <button className="icon-button" aria-label="清空搜索" onClick={() => setQuery('')}><X size={15} /></button>}</label><button className="text-button" onClick={() => view === 'uploads' ? void refreshUploads() : view === 'catalog' ? void Promise.all([refreshCatalog(), refreshCatalogFolders()]) : void syncNow()} disabled={loading || syncing}><RefreshCw size={15} />刷新</button></div>}
+              {view !== 'notes' && <div className="collection-controls"><label className="search cloud-search"><Search size={17} /><input aria-label="搜索书库" placeholder="搜索标题、作者…" value={query} onChange={event => setQuery(event.target.value)} />{query && <button className="icon-button" aria-label="清空搜索" onClick={() => setQuery('')}><X size={15} /></button>}</label><button className="text-button" onClick={() => view === 'uploads' ? void refreshUploads() : view === 'catalog' ? void Promise.all([refreshCatalog(), refreshCatalogFolders()]) : (metadata.retry(), void syncNow())} disabled={loading || syncing}><RefreshCw size={15} />刷新</button></div>}
               {catalogError && (view === 'catalog' || view === 'uploads') && <div className="cloud-error" role="alert"><p>{catalogError}</p><button className="secondary-button" onClick={() => view === 'uploads' ? void refreshUploads() : void refreshCatalog()}>重新连接</button></div>}
               {view === 'catalog' && <>
                 <div className="folder-toolbar">{catalogFolderId && <><button className="text-button" onClick={() => { setCatalogFolderId(null); setQuery(''); }}>‹ 书库</button><strong>{catalogFolder?.name || '文件夹'}</strong>{catalogFolder?.canManage && <button className="icon-button" aria-label="管理书库文件夹" disabled={!!busy} onClick={() => setCatalogEditor(catalogFolder)}><Settings2 size={18} /></button>}</>}</div>
@@ -420,16 +414,17 @@ export default function App() {
                 <div className="book-grid">{visible.map(paper => {
                   const title = view === 'shelf' ? shelf.item(paper.id)?.remark || paper.title : paper.title;
                   const data = accountId && shelf.locked(paper.id) ? emptyReading() : personalData(paper.id); const cache = cached.find(b => b.id === paper.id);
+                  const unresolved = view === 'shelf' && !lookup(paper.id);
                   return <article className="book-card" key={paper.id}>
-                    <button className="book-cover public-cover" aria-label={`阅读 ${title}`} disabled={!!busy || (paper.removed && !cache)} onClick={() => void openPaper(paper)}>
-                      {(paper.removed || paper.visibility === 'private') && <div className="cover-top"><span>{paper.removed ? '已撤下' : '私密'}</span></div>}
-                      <PaperCover key={`${accountId || 'guest'}:${paper.id}`} paper={paper} title={title} cachedCover={cache?.cover} allowed={paper.visibility !== 'private' || (!!current.user && !shelf.locked(paper.id) && (paper.privateOwner === accountId || current.user.admin))} />
-                      <div className="cover-bottom"><span>{paper.pages} 页</span></div>
+                    <button className="book-cover public-cover" aria-label={`阅读 ${title}`} disabled={!!busy || unresolved || (paper.removed && !cache)} onClick={() => void openPaper(paper)}>
+                      {!unresolved && (paper.removed || paper.visibility === 'private') && <div className="cover-top"><span>{paper.removed ? (metadata.status[paper.id] === 'unavailable' ? '无法访问' : '已撤下') : '私密'}</span></div>}
+                      <PaperCover key={`${accountId || 'guest'}:${paper.id}`} paper={paper} title={title} cachedCover={cache?.cover} allowed={!unresolved && (paper.visibility !== 'private' || (!!current.user && !shelf.locked(paper.id) && (paper.privateOwner === accountId || current.user.admin)))} />
+                      {!unresolved && <div className="cover-bottom"><span>{paper.pages} 页</span></div>}
                     </button>
                     <div className="book-info">
-                      <button className="book-title" onClick={() => void openPaper(paper)} disabled={!!busy || (paper.removed && !cache)}>{title}</button>
+                      <button className="book-title" onClick={() => void openPaper(paper)} disabled={!!busy || unresolved || (paper.removed && !cache)}>{title}</button>
                       {paper.author && <p className="book-author">{paper.author}</p>}
-                      <div className="book-meta"><span>{sizeLabel(paper.size)}</span><span>{data.opened ? `读至第 ${data.page} 页` : '尚未阅读'}</span></div>
+                      <div className="book-meta"><span>{unresolved ? '书籍信息待更新' : sizeLabel(paper.size)}</span><span>{data.opened ? `读至第 ${data.page} 页` : '尚未阅读'}</span></div>
                       {view === 'shelf' && <div className="shelf-card-tools">
                         <div className="book-rating" role="group" aria-label={`${title}，${data.rating || 0} 星评分`}>
                           {[1, 2, 3, 4, 5].map(star => <button key={star} className={`rating-star ${(data.rating || 0) >= star ? 'filled' : ''}`} disabled={!!busy} aria-label={data.rating === star ? `取消 ${star} 星评分` : `评为 ${star} 星`} aria-pressed={data.rating === star} title={data.rating === star ? '再次点击取消评分' : `${star} 星`} onClick={() => void rateBook(paper, data.rating === star ? 0 : star)}><Star size={19} fill={(data.rating || 0) >= star ? 'currentColor' : 'none'} /></button>)}
@@ -444,13 +439,14 @@ export default function App() {
                         {(view === 'catalog' || view === 'uploads') && current.user && paper.canOrganize && <button className="secondary-button" aria-label={`书库归类 ${title}`} disabled={!!busy} onClick={() => openCatalogMove(paper)}><FolderOpen size={16} />归类</button>}
                         {view === 'uploads' && !paper.removed && <button className="icon-button" aria-label={`撤下 ${title}`} onClick={() => setWithdraw(paper)}><Trash2 size={16} /></button>}
                       </div>}
-                      {data.opened > 0 && <div className="progress-track"><div style={{ width: `${data.page / paper.pages * 100}%` }} /></div>}
+                      {!unresolved && data.opened > 0 && <div className="progress-track"><div style={{ width: `${data.page / paper.pages * 100}%` }} /></div>}
                     </div>
                   </article>;
                 })}</div>
                 {!visible.length && !catalogError && !(view === 'shelf' && !folderId && shelf.folders.length) && !(view === 'catalog' && !catalogFolderId && !query && catalogFolders.length) && <Empty text={query ? '没有找到匹配的文献。' : view === 'shelf' ? folderId ? '文件夹里还没有书籍。' : '书架还是空的，去书库挑选想读的文献吧。' : view === 'uploads' ? '你还没有上传文献。' : catalogFolderId ? '文件夹里还没有文献，上传时可以选择此文件夹。' : '书库还是空的，登录后分享第一篇文献。'} />}
                 {more && view === 'catalog' && <button className="wide-button" disabled={loading} onClick={() => void refreshCatalog(true)}>{loading ? '正在加载…' : '加载更多'}</button>}
-                {view === 'shelf' && shelfIds.some(id => !shelf.locked(id) && !lookup(id)) && <p className="fineprint">部分文献暂时不可用，个人记录仍保留，可稍后重试同步。</p>}
+                {view === 'shelf' && shelfIds.some(id => !shelf.locked(id) && metadata.status[id] === 'error') && <div className="cloud-error" role="alert"><p>部分书籍信息加载失败，已加载的书名和个人记录仍保留。</p><button className="secondary-button" onClick={metadata.retry}>重试书籍信息</button></div>}
+                {view === 'shelf' && shelfIds.some(id => !shelf.locked(id) && metadata.status[id] === 'unavailable') && <p className="fineprint">部分文献已撤下或当前账号无权访问，个人记录仍保留。</p>}
               </>}
             </>}
           </div>

@@ -10,6 +10,8 @@ A mobile-first web reader for bilingual academic papers, with highlights, notes,
 
 ## Features
 
+- Shelf metadata loads in batches of up to 40 books, with at most two batches in flight. Previously loaded titles are cached per account and shown again after folder access is checked. Pending requests display a loading state; connection failures offer a retry and do not mark books as withdrawn. Only a confirmed inaccessible document shows an unavailable state.
+
 - Register by verifying an email once, then set a password and sign in with it. Sessions last 30 days; email verification also supports password recovery. Existing verified emails retain their account IDs, shelves and notes. Cloudflare Access still supplies registration/recovery verification, so its free-plan user limit still applies.
 
 - Open on the personal shelf by default. Create account-synced folders, optionally password-protected, and organize books through each shelf card’s edit button. A personal title remark replaces the displayed title on your shelf and in the reader; clearing it restores the original. Original filenames and public catalog titles stay unchanged.

@@ -10,7 +10,7 @@ A mobile-first web reader for bilingual academic papers, with highlights, notes,
 
 ## Features
 
-- My notes groups annotations by book, collapsed by default and ordered by latest edit. Expand a book to browse notes in page order, open the cited page, copy notes or export that book. Library/shelf/upload covers show a small personal note-count badge only when nonzero; locked books and other accounts’ notes stay hidden.
+- My notes groups annotations by book, collapsed by default and ordered by latest edit. Expand a book to browse notes in page order, open the cited page, copy notes or export that book. Library/shelf/upload covers show a red ribbon with the personal note count along the right edge of the cover, only when nonzero; locked books and other accounts’ notes stay hidden.
 
 - Opening a document creates a browser history entry. Browser Back and the reader’s Back button restore the previous list, folder, search and scroll position; Forward reopens the document with current account/folder access checks. A reload returns to the library rather than reopening an in-memory reader entry.
 

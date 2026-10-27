@@ -95,8 +95,8 @@
 .book-rating { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); width: 160px; max-width: 100%; min-width: 0; }
 .rating-star { width: 100%; }
 
-/* Quiet personal note counts, above the cover artwork without a heavy border. */
-.book-note-count { position: absolute; top: 14px; right: 14px; z-index: 2; display: inline-flex; align-items: center; gap: 6px; min-width: 32px; padding: 6px 9px; border-radius: 20px; color: var(--green); background: var(--paper); box-shadow: 0 1px 5px rgb(var(--shadow-rgb) / .05); font-size: 12px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
+/* A small red ribbon aligned with the upper edge of the cover artwork. */
+.book-note-count { position: absolute; top: 22%; right: 0; z-index: 2; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 58px; padding: 8px 13px 8px 18px; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 7px 50%); color: #fff; background: #b8443e; font-size: 12px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
 .note-total { margin-left: 12px; color: var(--muted); font-size: 12px; font-weight: 400; }
 .note-book-list { display: grid; gap: 12px; }
 .note-book-group { min-width: 0; background: var(--paper); border-radius: 12px; overflow: hidden; }
@@ -122,7 +122,7 @@
 .note-book-body .global-note > p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .note-book-body .note-source:disabled { opacity: .6; cursor: default; }
 @media (max-width: 640px) {
-  .book-note-count { top: 9px; right: 9px; gap: 4px; font-size: 11px; padding: 5px 7px; }
+  .book-note-count { gap: 5px; min-width: 50px; font-size: 11px; padding: 7px 10px 7px 15px; }
   .book-note-count svg { width: 11px; height: 11px; }
   .note-book-toggle { gap: 12px; padding: 18px 14px; }
   .note-book-symbol { width: 34px; height: 46px; }

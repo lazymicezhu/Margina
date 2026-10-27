@@ -136,7 +136,7 @@ export default function Reader({ book, pdfSource, onBack, onUpdate, onReload, no
   });
   const pageGesturesEnabled = readingLayout === 'paged' && !editor && !help && !deleting && !panel && !selection && (!pdfError && (isTxt ? textPages.length > 0 : mode === 'flow' || (!!pdf && zoom <= 1)));
   usePageSwipe(scroller, pageGesturesEnabled, page, direction => changePage(page + direction));
-  usePageClick(scroller, pageGesturesEnabled, page, direction => changePage(page + direction));
+  usePageClick(scroller, pageGesturesEnabled, page, book.pages, direction => changePage(page + direction));
   function switchLanguage(lang: Language) { setLanguage(lang); setSelection(null); window.getSelection()?.removeAllRanges(); }
   function draft(data?: SelectionData): Annotation {
     return { id: randomId(), page: data?.page || page, quote: data?.quote || '', text: '', rects: data?.rects || [], language: data?.language || language, segmentId: data?.segmentId, color, created:Date.now(),updated:Date.now() };

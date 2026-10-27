@@ -17,6 +17,7 @@ function setup(enabled = true) {
   }
   const root = {
     clientWidth: 600,
+    dataset: {},
     getBoundingClientRect: () => ({ left: 100, width: 615 }),
     addEventListener: (name, fn) => listeners.set(name, fn),
     removeEventListener: name => listeners.delete(name),
@@ -30,7 +31,7 @@ function setup(enabled = true) {
     document: { addEventListener: (name, fn) => documentListeners.set(name, fn), removeEventListener: name => documentListeners.delete(name) },
     setTimeout: fn => { timers.set(++clock, fn); return clock; }, clearTimeout: id => timers.delete(id),
   });
-  exports.usePageClick({ current: root }, enabled, 2, direction => turns.push(direction));
+  exports.usePageClick({ current: root }, enabled, 2, 5, direction => turns.push(direction));
   const event = (type, props = {}) => listeners.get(type)?.({ target: new Target(props.kind), pointerType: 'mouse', button: 0, clientX: 550, clientY: 200, timeStamp: 100, detail: 1, ...props });
   return { event, turns, viewport, listeners, documentListeners, cleanup: () => cleanup?.(), select(value) { selected = value; documentListeners.get('selectionchange')?.(); }, flush() { for (const fn of timers.values()) fn(); timers.clear(); } };
 }

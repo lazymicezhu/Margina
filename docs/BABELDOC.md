@@ -68,3 +68,9 @@ python -m unittest discover -s tests -v
 `public/samples/catalog.json` may be a legacy array (first-run samples) or an object with `revision` and `items`. Each item has `pdf`, `name`, optional `bundle`, `sha256`, `title`, `author`, and `bilingual` (an explicitly verified layout). PDF-only entries remain usable without a bundle. Change the revision when the catalog or bundle content changes. The browser imports each revision once; same-hash books receive only metadata/bundle updates, preserving annotations, bookmarks and progress. Removing a paper does not re-add it on every refresh; a later catalog revision can add it again.
 
 All catalog PDFs and bundles stay under the ignored `public/samples/` folder. A partial import does not advance the revision and retries safely on the next load. This is local import, not cross-device synchronization.
+
+## 内嵌首页封面
+
+新导出的阅读包包含 `cover`：从最终双语 PDF 第 1 页的中文右半页渲染白底 JPEG，保持比例，目标宽度 480、高度不超过 1000、图片不超过 300 KiB。字段含 `mime: image/jpeg`、`page: 1`、`crop: zh`、`pdfSha256`、`width`、`height`、原始 base64 `data`。PDF 哈希与阅读包一致；导出不修改 PDF。缓存按最终 PDF 字节哈希绑定，文件变化后重新生成。
+
+网站保留旧版无封面阅读包兼容性；新包上传时把封面单独存到云端，书库直接读取小图。私密封面沿用文献与文件夹权限。导出后实际检查图片方向、中文侧和裁切，不用封面检查替代全文审阅。

@@ -69,7 +69,7 @@ export default function App() {
           const bundle = validateBundle(JSON.parse(await file.text()));
           const book = next.find(b => b.id === bundle.pdfSha256);
           if (!book || book.format === 'txt' || book.pages !== bundle.pageCount) throw new Error('请同时导入与此阅读包匹配的双语 PDF');
-          const updated = { ...book, bundle, title: bundle.title, author: bundle.author || book.author, bilingual: true };
+          const updated = { ...book, bundle, ...(bundle.cover ? { cover: `data:${bundle.cover.mime};base64,${bundle.cover.data}` } : {}), title: bundle.title, author: bundle.author || book.author, bilingual: true };
           await putBook(updated); next = next.map(b => b.id === book.id ? updated : b); linked++; setBooks([...next]);
         } catch (e) { failures.push(`${file.name}：${e instanceof Error ? e.message : '数据格式不正确'}`); }
       }

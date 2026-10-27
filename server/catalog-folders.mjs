@@ -1,7 +1,8 @@
 import { check, readJson } from './validation.mjs';
 
-export const paperWithFolder = `SELECT p.*, i.folder_id AS catalog_folder_id, f.name AS catalog_folder_name FROM papers p
-  LEFT JOIN catalog_items i ON i.book_id = p.id LEFT JOIN catalog_folders f ON f.id = i.folder_id`;
+export const paperWithFolder = `SELECT p.*, i.folder_id AS catalog_folder_id, f.name AS catalog_folder_name, c.version AS cover_version FROM papers p
+  LEFT JOIN catalog_items i ON i.book_id = p.id LEFT JOIN catalog_folders f ON f.id = i.folder_id
+  LEFT JOIN paper_covers c ON c.book_id = p.id AND c.crop = CASE WHEN p.bilingual = 1 THEN 'zh' ELSE 'full' END`;
 
 export async function catalogFolders(env, user) {
   const { results } = await env.DB.prepare(`SELECT f.id, f.name, f.owner,

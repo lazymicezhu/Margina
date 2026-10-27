@@ -331,6 +331,7 @@ export default function App() {
             const result = await uploadPdf(book, user.id, uploadVisibility, uploadCatalogFolder);
             setKnown(old => ({ ...old, [result.paper.id]: result.paper }));
             await editReading(user.id, result.paper.id, { shelf: true });
+            if (result.coverWarning) failures.push(`${file.name}：${result.coverWarning}`);
             if (uploadVisibility === 'private' && !toFile.some(item => item.id === result.paper.id)) toFile.push({ id: result.paper.id, name: file.name });
             if (result.duplicate && uploadVisibility === 'public' && (result.paper.catalogFolderId || '') !== uploadCatalogFolder) keptLocation = true;
           } else {
@@ -352,7 +353,7 @@ export default function App() {
         } catch (error) { failures.push(`文件已上传，归类失败：${problem(error)}`); }
         await reloadAccount(user.id);
       }
-      if (count) setAdminRevision(old => old + 1);
+      if (count) { setAdminRevision(old => old + 1); metadata.retry(); }
       if (!failures.length) { setUpload(false); setFiles([]); setPublicConsent(false); }
       notify([count ? `已处理 ${count} 个文件` : '', keptLocation ? '重复文献保留原书库位置，可在「我的上传」中调整归类' : '', ...failures].filter(Boolean).join('；'));
       await refreshCatalogFolders();
@@ -418,7 +419,7 @@ export default function App() {
                   return <article className="book-card" key={paper.id}>
                     <button className="book-cover public-cover" aria-label={`阅读 ${title}`} disabled={!!busy || unresolved || (paper.removed && !cache)} onClick={() => void openPaper(paper)}>
                       {!unresolved && (paper.removed || paper.visibility === 'private') && <div className="cover-top"><span>{paper.removed ? (metadata.status[paper.id] === 'unavailable' ? '无法访问' : '已撤下') : '私密'}</span></div>}
-                      <PaperCover key={`${accountId || 'guest'}:${paper.id}`} paper={paper} title={title} cachedCover={cache?.cover} allowed={!unresolved && (paper.visibility !== 'private' || (!!current.user && !shelf.locked(paper.id) && (paper.privateOwner === accountId || current.user.admin)))} />
+                      <PaperCover owner={accountId} key={`${accountId || 'guest'}:${paper.id}`} paper={paper} title={title} cachedCover={cache?.bilingual === paper.bilingual ? cache.cover : undefined} allowed={!unresolved && (paper.visibility !== 'private' || (!!current.user && !shelf.locked(paper.id) && (paper.privateOwner === accountId || current.user.admin)))} />
                       {!unresolved && <div className="cover-bottom"><span>{paper.pages} 页</span></div>}
                     </button>
                     <div className="book-info">

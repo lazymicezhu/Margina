@@ -28,10 +28,15 @@ export async function getPaper(id: string): Promise<Paper> {
 const fileUrl = (paper: Paper, kind: 'file' | 'bundle') => paper.visibility === 'private' ? `/api/account/files/${paper.id}/${kind}` : `/api/papers/${paper.id}/${kind}`;
 export const jsonOptions = (method: string, body: unknown): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 export async function uploadPdf(book: Book, user: string, visibility: 'public' | 'private' = 'public', catalogFolderId?: string | null) {
-  return api<{ paper: Paper; duplicate?: boolean }>(`/api/private/papers/${book.id}`, {
+  const result = await api<{ paper: Paper; duplicate?: boolean; coverWarning?: string }>(`/api/private/papers/${book.id}`, {
     method: 'PUT', headers: { 'Content-Type': book.format === 'txt' ? 'text/plain' : 'application/pdf', 'X-Paper-Visibility': visibility, 'X-Public-Upload': visibility === 'public' ? 'confirmed' : '', 'X-Margina-User': user, ...(visibility === 'public' && catalogFolderId ? { 'X-Catalog-Folder': catalogFolderId } : {}),
       'X-Paper-Metadata': encodeURIComponent(JSON.stringify({ title: book.title.slice(0, 500), author: book.author.slice(0, 300), fileName: book.fileName.slice(0, 255), pages: book.pages, bilingual: book.bilingual })) }, body: book.blob,
   });
+  if (book.format !== 'txt' && book.cover && result.paper.canUpdateCover && !result.paper.coverVersion) {
+    try { const { uploadCover } = await import('./cover-client'); result.paper = await uploadCover(result.paper, book.cover, user); }
+    catch { result.coverWarning = '文件已上传，封面保存失败；打开书库时会尝试补全。'; }
+  }
+  return result;
 }
 export async function uploadBundle(file: File, user: string, visibility: 'public' | 'private' = 'public') {
   if (file.size > 20 * 1024 * 1024) throw new Error('阅读包不能超过 20 MB');
@@ -77,6 +82,7 @@ export async function cachePaper(paper: Paper, forceDownload = false): Promise<{
     const bundle = validateBundle(await response.json());
     if (bundle.pdfSha256 !== (paper.contentHash || paper.id) || bundle.pageCount !== paper.pages) throw new Error('阅读包与 PDF 不匹配');
     metadata.bundle = bundle;
+    if (bundle.cover) metadata.cover = `data:${bundle.cover.mime};base64,${bundle.cover.data}`;
   }
   if (Object.keys(metadata).length) await patchBook(book.id, metadata);
   if (metadata.bundle) await setting(`public-bundle:${paper.id}`, paper.updated);

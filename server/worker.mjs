@@ -1,3 +1,4 @@
+import { coverResponse, coverUpload, storeCover } from './covers.mjs';
 import { passwordRequest, passwordStatus, passwordAuthEnabled } from './password-auth.mjs';
 import { shelfAccess, shelfRequest } from './shelf.mjs';
 import { catalogFolders, catalogFolderRequest, requireCatalogFolder, paperWithFolder } from './catalog-folders.mjs';
@@ -9,7 +10,7 @@ import { adminRequest, rememberUser } from './admin.mjs';
 
 const json = (data, status = 200, headers = {}) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers } });
 const publicPaper = (p, user) => ({ id: p.id, catalogFolderId: p.catalog_folder_id || null, catalogFolderName: p.catalog_folder_name || null,
-  canOrganize: !!user && p.visibility === 'public' && (p.removed === 0 || (user.admin && p.removed === 1)) && (p.owner === user.id || user.admin), title: p.title, author: p.author, fileName: p.file_name, size: p.size, pages: p.pages,
+  coverVersion: p.cover_version || undefined, canUpdateCover: !!user && !p.removed && (p.owner === user.id || user.admin), canOrganize: !!user && p.visibility === 'public' && (p.removed === 0 || (user.admin && p.removed === 1)) && (p.owner === user.id || user.admin), title: p.title, author: p.author, fileName: p.file_name, size: p.size, pages: p.pages,
   format: p.pdf_key.endsWith('.txt') ? 'txt' : 'pdf', contentHash: p.content_hash || p.id, visibility: p.visibility, ...(p.visibility === 'private' ? { privateOwner: p.owner } : {}), bilingual: !!p.bilingual, hasBundle: !!p.bundle_key, created: p.created, updated: p.updated, removed: !!p.removed });
 const publicRecord = row => row ? { bookId: row.book_id, version: row.version, seq: row.seq, data: JSON.parse(row.data) } : null;
 const getPaper = (env, id) => env.DB.prepare(`${paperWithFolder} WHERE p.id = ?`).bind(id).first();
@@ -104,13 +105,13 @@ export default {
           ORDER BY p.created DESC, p.id LIMIT 41 OFFSET ?`).bind(folderId === null ? 0 : 1, folderId || null, query, query, offset).all();
         return json({ papers: results.slice(0, 40).map(p => publicPaper(p, user)), more: results.length > 40 });
       }
-      const publicMatch = path.match(/^\/api\/papers\/([a-f0-9]{64})(?:\/(pdf|file|bundle))?$/);
+      const publicMatch = path.match(/^\/api\/papers\/([a-f0-9]{64})(?:\/(pdf|file|bundle|cover))?$/);
       if (publicMatch && ['GET', 'HEAD'].includes(request.method)) {
         const paper = await getPaper(env, publicMatch[1]);
         check(paper && !paper.removed && paper.visibility === 'public', '文献不存在或已撤下', 404);
         const kind = publicMatch[2];
         if (!kind) return json(publicPaper(paper));
-        return fileResponse(request, env, paper, kind);
+        return kind === 'cover' ? await coverResponse(request, env, paper) : fileResponse(request, env, paper, kind);
       }
       if (!path.startsWith('/api/private/')) return json({ error: '接口不存在' }, 404);
       const user = await identity(request, env);
@@ -134,12 +135,19 @@ export default {
       }
       if (path.startsWith('/api/private/shelf')) return await shelfRequest(request, env, user, shelf, json);
       if (path.startsWith('/api/private/catalog/')) return await catalogFolderRequest(request, env, user, shelf, json);
-      const privateFile = path.match(/^\/api\/private\/files\/([a-f0-9]{64})(?:\/(file|bundle))?$/);
-      if (privateFile && ['GET', 'HEAD'].includes(request.method)) {
+      const privateFile = path.match(/^\/api\/private\/files\/([a-f0-9]{64})(?:\/(file|bundle|cover))?$/);
+      if (privateFile && (['GET', 'HEAD'].includes(request.method) || (request.method === 'PUT' && privateFile[2] === 'cover'))) {
         shelf.requireBook(privateFile[1]);
         const paper = await getPaper(env, privateFile[1]);
         check(canRead(paper, user) && !paper.removed, '文献不存在或不可访问', 404);
-        return privateFile[2] ? fileResponse(request, env, paper, privateFile[2]) : json(publicPaper(paper));
+        if (privateFile[2] === 'cover') {
+          if (request.method === 'PUT') {
+            await coverUpload(request, env, paper, user, { reserve, discard });
+            return json({ paper: publicPaper(await getPaper(env, paper.id), user) });
+          }
+          return await coverResponse(request, env, paper);
+        }
+        return privateFile[2] ? fileResponse(request, env, paper, privateFile[2]) : json(publicPaper(paper, user));
       }
 
       if (path === '/api/private/login' && request.method === 'GET') return Response.redirect(`${url.origin}${url.searchParams.get('next') === '/admin' ? '/admin' : '/'}`, 302);
@@ -201,7 +209,8 @@ export default {
             check(result.meta.changes === 1, '文献刚被修改，请刷新后重试', 409);
           } catch (error) { await discard(env, key); throw error; }
           if (paper.bundle_key) await discard(env, paper.bundle_key);
-          return json({ paper: publicPaper(await getPaper(env, id)) });
+          if (bundle.cover) await storeCover(env, { ...paper, bilingual: 1 }, Uint8Array.from(atob(bundle.cover.data), c => c.charCodeAt(0)), { reserve, discard });
+          return json({ paper: publicPaper(await getPaper(env, id), user) });
         }
         if (request.method === 'PUT' && !uploadMatch[2]) {
           check(visibility === 'private' || request.headers.get('x-public-upload') === 'confirmed', '请确认文件将公开分享');
@@ -210,7 +219,7 @@ export default {
           if (catalogFolderId) await requireCatalogFolder(env, catalogFolderId);
           if (paper) {
             check(canRead(paper, user) && !paper.removed, '该文献不可用，请联系管理员', 409);
-            return json({ paper: publicPaper(paper), duplicate: true });
+            return json({ paper: publicPaper(paper, user), duplicate: true });
           }
           const size = Number(request.headers.get('content-length'));
           const mime = request.headers.get('content-type')?.split(';')[0];
@@ -247,7 +256,7 @@ export default {
               SELECT id, ? FROM papers WHERE id = ? AND pdf_key = ?`).bind(catalogFolderId, id, key)] : [])]);
             if (!result.meta.changes) await discard(env, key);
           } catch (error) { await discard(env, key); throw error; }
-          return json({ paper: publicPaper(await getPaper(env, id)) }, 201);
+          return json({ paper: publicPaper(await getPaper(env, id), user) }, 201);
         }
       }
       return json({ error: '接口不存在' }, 404);

@@ -159,3 +159,9 @@ npm run deploy:cloud
 5. 私有 API 的当前客户端入口为 `/api/account/*`；Worker 保留全部账号、管理员和文件夹权限校验。不得给这些 API 增加绕过 Worker 的静态响应或缓存。
 
 `/api/auth/start` 和密码接口可由游客访问，但设置密码必须持有邮箱验证后签发的单次凭据。登录会话最长 30 天，退出立即撤销，重设密码撤销旧会话。注册/恢复邮箱验证仍使用 Zero Trust，因此没有消除原方案的 50 用户免费容量限制。此方案不需要开通 Workers Paid 邮件发送服务。
+
+## 独立首页封面
+
+此版本上线前运行 `wrangler d1 execute margina --remote --file server/migrations/0005-paper-covers.sql --config wrangler.jsonc`，添加 `paper_covers`。旧 Worker 可继续运行；先迁移再发布新版。封面计入现有存储额度，不需要新桶或公开 R2。
+
+新 PDF 上传后另存 JPEG；新阅读包的 `cover` 会自动提取并保存。现有无封面的 PDF 在上传者或管理员查看相应卡片时逐步补全，普通访问者只加载已经保存的小图。封面生成失败不会影响 PDF 上传与阅读；可重新查看卡片重试。线上迁移、部署和既有文献批量处理仍须用户授权。

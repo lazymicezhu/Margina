@@ -65,6 +65,9 @@ export async function adminRequest(request, env, user, { json, publicPaper, publ
     }
     await discard(env, paper.pdf_key);
     if (paper.bundle_key) await discard(env, paper.bundle_key);
+    const { results: covers } = await env.DB.prepare('SELECT object_key FROM paper_covers WHERE book_id = ?').bind(paper.id).all();
+    for (const cover of covers) await discard(env, cover.object_key);
+    await env.DB.prepare('DELETE FROM paper_covers WHERE book_id = ?').bind(paper.id).run();
     await env.DB.prepare('UPDATE papers SET removed = 2, updated = ? WHERE id = ? AND removed = 3')
       .bind(Date.now(), paper.id).run();
     return json({ ok: true });

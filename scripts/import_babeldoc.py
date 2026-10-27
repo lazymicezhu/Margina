@@ -4,6 +4,7 @@ Use the final bilingual PDF. Legacy tracking and reverse-direction jobs are
 supported explicitly; bundle source/zh always mean English/Chinese for v1.
 """
 import argparse
+import base64
 import hashlib
 import json
 import re
@@ -103,6 +104,54 @@ def verify_pdf(pdf, source, source_language):
         return len(dual)
 
 
+def render_cover(pdf, cache_dir=None):
+    """The final PDF is authoritative: use page 1's Chinese/right half."""
+    import pymupdf as fitz
+    pdf_hash = sha(pdf)
+    cache = Path(cache_dir) / '.cache' / 'cover.json' if cache_dir else None
+    signature = hashlib.sha256(json.dumps([pdf_hash, fitz.VersionBind, 'zh-jpeg-480x1000-v1']).encode()).hexdigest()
+    if cache:
+        try:
+            previous = read(cache) if cache.exists() else {}
+        except (OSError, ValueError):
+            previous = {}
+        if isinstance(previous, dict) and previous.get('key') == signature:
+            cover = previous.get('cover', {})
+            try:
+                raw = base64.b64decode(cover['data'], validate=True)
+                image = fitz.Pixmap(raw)
+                valid = (cover['pdfSha256'] == pdf_hash and cover['crop'] == 'zh'
+                             and cover['mime'] == 'image/jpeg' and cover['page'] == 1
+                             and (image.width, image.height) == (cover['width'], cover['height'])
+                             and 0 < image.width <= 640 and 0 < image.height <= 1200
+                             and 0 < len(raw) <= 300 * 1024)
+                if valid:
+                    return cover
+            except (KeyError, ValueError, TypeError, RuntimeError):
+                pass
+    with fitz.open(pdf) as document:
+        page = document[0]
+        rect = page.rect
+        clip = fitz.Rect(rect.x0 + rect.width / 2, rect.y0, rect.x1, rect.y1)
+        scale = min(480 / clip.width, 1000 / clip.height)
+        for _ in range(4):
+            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), clip=clip,
+                                  colorspace=fitz.csRGB, alpha=False)
+            raw = pix.tobytes('jpeg', jpg_quality=82)
+            if len(raw) <= 300 * 1024:
+                break
+            scale *= .75
+        else:
+            raise ValueError('首页封面超过 300 KB，请检查 PDF 首页。')
+    cover = {'mime': 'image/jpeg', 'page': 1, 'crop': 'zh', 'pdfSha256': pdf_hash,
+             'width': pix.width, 'height': pix.height,
+             'data': base64.b64encode(raw).decode('ascii')}
+    if cache:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps({'key': signature, 'cover': cover}), encoding='utf-8')
+    return cover
+
+
 def export_job(job, pdf, title='', author='', source_override=None, *,
                source_language='en', legacy_tracking=None, translations_path=None,
                glossary_path=None):
@@ -147,7 +196,7 @@ def export_job(job, pdf, title='', author='', source_override=None, *,
     gpath = Path(glossary_path) if glossary_path else job / 'glossary.json'
     glossary = normalize_glossary(read(gpath) if gpath.exists() else {}, source_language)
     verification = read(job / 'verification.json') if (job / 'verification.json').exists() else {}
-    return {'format': 'yuejian-babeldoc-v1', 'pdfSha256': sha(pdf), 'sourceSha256': meta['source_sha256'],
+    return {'cover': render_cover(pdf, job), 'format': 'yuejian-babeldoc-v1', 'pdfSha256': sha(pdf), 'sourceSha256': meta['source_sha256'],
             'title': title or source.stem, 'titleEn': next((s['source'] for s in segments if len(s['source']) > 25), source.stem),
             'author': author, 'engine': 'BabelDOC ' + meta.get('babeldoc', ''), 'pageCount': pages,
             'sourceLanguage': source_language, 'segments': segments, 'glossary': glossary,

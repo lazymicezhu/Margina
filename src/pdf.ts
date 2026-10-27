@@ -15,13 +15,14 @@ export function loadPdfCover(url: string, headers: Record<string, string>) {
 export async function renderPdfCover(pdf: PDFDocumentProxy, bilingual: boolean) {
   const page = await pdf.getPage(1);
   const original = page.getViewport({ scale: 1 });
-  const scale = 360 / (bilingual ? original.width / 2 : original.width);
+  const width = bilingual ? original.width / 2 : original.width;
+  const scale = Math.min(480 / width, 1000 / original.height);
   const viewport = page.getViewport({ scale, offsetX: bilingual ? -original.width / 2 * scale : 0 });
   const canvas = document.createElement('canvas');
-  canvas.width = 360; canvas.height = Math.min(1000, Math.ceil(viewport.height));
+  canvas.width = Math.max(1, Math.round(width * scale)); canvas.height = Math.max(1, Math.round(viewport.height));
   try {
     await page.render({ canvas, viewport }).promise;
-    return canvas.toDataURL('image/webp', 0.85);
+    return canvas.toDataURL('image/jpeg', 0.82);
   } finally { canvas.width = 0; canvas.height = 0; }
 }
 export async function makeBook(blob: Blob, fileName: string, sample = false): Promise<Book> {

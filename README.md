@@ -10,6 +10,10 @@ A mobile-first web reader for bilingual academic papers, with highlights, notes,
 
 ## Features
 
+- My notes groups annotations by book, collapsed by default and ordered by latest edit. Expand a book to browse notes in page order, open the cited page, copy notes or export that book. Library/shelf/upload covers show a small personal note-count badge only when nonzero; locked books and other accounts’ notes stay hidden.
+
+- Opening a document creates a browser history entry. Browser Back and the reader’s Back button restore the previous list, folder, search and scroll position; Forward reopens the document with current account/folder access checks. A reload returns to the library rather than reopening an in-memory reader entry.
+
 - Shelf metadata loads in batches of up to 40 books, with at most two batches in flight. Previously loaded titles are cached per account and shown again after folder access is checked. Pending requests display a loading state; connection failures offer a retry and do not mark books as withdrawn. Only a confirmed inaccessible document shows an unavailable state.
 
 - Register by verifying an email once, then set a password and sign in with it. Sessions last 30 days; email verification also supports password recovery. Existing verified emails retain their account IDs, shelves and notes. Cloudflare Access still supplies registration/recovery verification, so its free-plan user limit still applies.

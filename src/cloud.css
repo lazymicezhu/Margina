@@ -94,3 +94,43 @@
 .cloud-shell .public-cover .cover-bottom > span { display: block; }
 .book-rating { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); width: 160px; max-width: 100%; min-width: 0; }
 .rating-star { width: 100%; }
+
+/* Quiet personal note counts, above the cover artwork without a heavy border. */
+.book-note-count { position: absolute; top: 14px; right: 14px; z-index: 2; display: inline-flex; align-items: center; gap: 6px; min-width: 32px; padding: 6px 9px; border-radius: 20px; color: var(--green); background: var(--paper); box-shadow: 0 1px 5px rgb(var(--shadow-rgb) / .05); font-size: 12px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
+.note-total { margin-left: 12px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.note-book-list { display: grid; gap: 12px; }
+.note-book-group { min-width: 0; background: var(--paper); border-radius: 12px; overflow: hidden; }
+.note-book-heading { margin: 0; }
+.note-book-toggle { display: flex; align-items: center; gap: 18px; width: 100%; padding: 24px; text-align: left; }
+.note-book-toggle:hover { background: var(--surface); }
+.note-book-toggle:focus-visible { outline: 2px solid var(--green); outline-offset: -3px; }
+.note-book-symbol { display: grid; place-items: center; flex-shrink: 0; width: 46px; height: 58px; border-radius: 5px 9px 9px 5px; background: var(--surface); color: var(--green); }
+.note-book-label { flex: 1; min-width: 0; }
+.note-book-label strong { display: block; font-family: 'Songti SC',serif; font-size: 19px; font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; }
+.note-book-label small { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-book-quantity { color: var(--green); background: var(--surface); padding: 5px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.note-book-chevron { flex-shrink: 0; color: var(--muted); transition: transform .18s; }
+.is-open .note-book-chevron { transform: rotate(180deg); }
+.note-book-body { padding: 0 24px 20px; }
+.note-book-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 15px 0; border-top: 1px solid var(--surface-raised); color: var(--muted); font-size: 11px; }
+.note-book-body .all-notes { display: grid; grid-template-columns: 1fr; gap: 0; }
+.note-book-body .global-note { padding: 18px 0; margin: 0; box-shadow: none; border-radius: 0; background: transparent; }
+.note-book-body .global-note + .global-note { border-top: 1px solid var(--surface-raised); }
+.note-entry-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.note-entry-top time { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+.note-book-body .global-note blockquote { max-height: none; overflow-wrap: anywhere; }
+.note-book-body .global-note > p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-book-body .note-source:disabled { opacity: .6; cursor: default; }
+@media (max-width: 640px) {
+  .book-note-count { top: 9px; right: 9px; gap: 4px; font-size: 11px; padding: 5px 7px; }
+  .book-note-count svg { width: 11px; height: 11px; }
+  .note-book-toggle { gap: 12px; padding: 18px 14px; }
+  .note-book-symbol { width: 34px; height: 46px; }
+  .note-book-symbol svg { width: 19px; }
+  .note-book-label strong { font-size: 16px; }
+  .note-book-label small { font-size: 10px; }
+  .note-book-quantity { padding: 5px 8px; }
+  .note-book-body { padding: 0 16px 10px; }
+  .note-total { margin-left: 8px; font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) { .note-book-chevron { transition: none; } }

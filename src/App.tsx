@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowDownToLine, ArrowRight, BookOpen, Check, ChevronRight, Cloud, FolderOpen, FolderPlus, LockKeyhole, Pencil, Library, LoaderCircle, LogIn, NotebookPen, Plus, RefreshCw, Search, Settings2, Star, Trash2, Upload, User, X } from 'lucide-react';
 import type { Book } from './types';
 import type { AccountState, CatalogFolder, Paper, ReadingData, Session } from './cloud-types';
@@ -6,23 +6,25 @@ import { emptyReading } from './cloud-types';
 import { api, cachePaper, catalog, getPaper, jsonOptions, session, uploadBundle, uploadPdf } from './cloud-api';
 import { readCachedPdf, type PdfSource } from './pdf-source';
 import { editReading, readAccount, syncAccount } from './sync';
-import { getBook, listBooks, notesMarkdown, patchBook, saveFile, setting } from './storage';
+import { getBook, listBooks, patchBook, saveFile, setting } from './storage';
 import { makeBook } from './pdf';
 import { makeTxtBook } from './txt-book';
 import Reader from './Reader';
 import AdminPanel from './AdminPanel';
 import AuthForm from './AuthForm';
 import { Logo } from './LocalLibrary';
-import { CopyButton } from './interactions';
+import BookNotes, { NoteCount } from './BookNotes';
 import { useShelf, type ShelfFolder } from './useShelf';
 import { bookLocked } from './shelf-lock';
 import { FolderEditor, FolderUnlock, ShelfBookEditor } from './ShelfDialogs';
 import { CatalogFolderEditor, UploadFolderPicker } from './CatalogFolders';
 import PaperCover from './PaperCover';
 import { usePaperMetadata } from './usePaperMetadata';
+import { createReaderNavigation, type ReaderEntry } from './reader-navigation';
 import './cloud.css';
 
 type View = 'catalog' | 'shelf' | 'notes' | 'uploads';
+type ReaderOrigin = { notesBookId: string | null; paper: Paper; owner?: string; view: View; query: string; folderId: string | null; catalogFolderId: string | null; papers: Paper[]; more: boolean; scroll: number };
 const sizeLabel = (size: number) => `${(size / 1024 / 1024).toFixed(1)} MB`;
 const problem = (error: unknown) => error instanceof Error ? error.message : '操作失败，请重试';
 const freshAccount = (): AccountState => ({ cursor: 0, records: {}, lastSynced: 0 });
@@ -35,6 +37,7 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [account, setAccount] = useState<AccountState>(freshAccount);
   const [view, setView] = useState<View>('shelf');
+  const [notesBookId, setNotesBookId] = useState<string | null>(null);
   const [papers, setPapers] = useState<Paper[]>([]);
   const [known, setKnown] = useState<Record<string, Paper>>({});
   const [cached, setCached] = useState<Book[]>([]);
@@ -82,7 +85,6 @@ export default function App() {
   const [deleteFolder, setDeleteFolder] = useState<ShelfFolder | null>(null);
   const [editBook, setEditBook] = useState<Paper | null>(null);
   const folder = shelf.folders.find(f => f.id === folderId);
-  const displayTitle = (id: string) => shelf.item(id)?.remark || lookup(id)?.title || '文献';
   const dirty = Object.values(account.records).filter(r => r.dirty).length;
   const shelfIds = Object.keys(account.records).filter(id => account.records[id].data.shelf)
     .sort((a, b) => (account.records[b].data.rating ?? 0) - (account.records[a].data.rating ?? 0) || account.records[b].data.opened - account.records[a].data.opened || a.localeCompare(b));
@@ -95,6 +97,40 @@ export default function App() {
     return metadata.status[id] === 'unavailable' ? { ...paper, removed: true } : paper;
   };
   const notify = (text: string) => setMessage(text);
+  const navigation = useRef<ReturnType<typeof createReaderNavigation<ReaderOrigin>> | null>(null);
+  const openingSerial = useRef(0);
+  const [returnScroll, setReturnScroll] = useState<{ y: number } | null>(null);
+  const restoredListing = useRef(false);
+  const onHistory = useRef<(entry: ReaderEntry<ReaderOrigin>) => void>(() => {});
+  onHistory.current = entry => {
+    openingSerial.current++;
+    actionLock.current = false;
+    setBusy(''); setActive(null); setPdfSource(undefined);
+    const origin = entry.data;
+    if (!origin || origin.owner !== userRef.current?.id) return;
+    if (view !== origin.view || query !== origin.query || catalogFolderId !== origin.catalogFolderId) restoredListing.current = true;
+    setView(origin.view); setNotesBookId(origin.notesBookId); setQuery(origin.query); setFolderId(origin.folderId); setCatalogFolderId(origin.catalogFolderId);
+    setPapers(origin.papers); setMore(origin.more); setLoading(false);
+    if (entry.kind === 'reader') void openPaper(origin.paper, entry.ticket);
+    else {
+      setReturnScroll({ y: origin.scroll });
+      void listBooks().then(setCached).catch(() => {});
+    }
+  };
+  useEffect(() => {
+    const previous = history.scrollRestoration;
+    history.scrollRestoration = 'manual';
+    const controller = createReaderNavigation<ReaderOrigin>(window, entry => onHistory.current(entry));
+    navigation.current = controller;
+    return () => { controller.dispose(); navigation.current = null; history.scrollRestoration = previous; };
+  }, []);
+  useLayoutEffect(() => {
+    if (active) { window.scrollTo(0, 0); return; }
+    if (!returnScroll) return;
+    window.scrollTo(0, returnScroll.y);
+    const frame = requestAnimationFrame(() => window.scrollTo(0, returnScroll.y));
+    return () => cancelAnimationFrame(frame);
+  }, [active?.id, returnScroll]);
 
   useEffect(() => { if (message) { const timer = setTimeout(() => setMessage(''), 6000); return () => clearTimeout(timer); } }, [message]);
   async function refreshSession() {
@@ -167,6 +203,7 @@ export default function App() {
   }
   useEffect(() => { void refreshSession(); void listBooks().then(setCached).catch(error => notify(problem(error))); }, []);
   useEffect(() => {
+    openingSerial.current++; navigation.current?.reset(); restoredListing.current = false; setReturnScroll(null); setNotesBookId(null); setBusy(''); actionLock.current = false;
     setUpload(false); setFiles([]); setUploadCatalogFolder(''); setUploadShelfFolder('');
     setCatalogEditor(null); setCatalogDelete(null); setCatalogMove(null);
     setCatalogFoldersReady(false); setCatalogFolders([]); catalogFoldersSerial.current++;
@@ -183,12 +220,13 @@ export default function App() {
     if (upload && accountId) void shelf.refresh().catch(() => {});
   }, [view, upload, accountId, adminOpen]);
   useEffect(() => {
+    if (restoredListing.current) { restoredListing.current = false; return; }
     if (view === 'catalog') { setPapers([]); setMore(false); setLoading(true); const timer = setTimeout(() => void refreshCatalog(), 200); return () => { clearTimeout(timer); searchSerial.current++; }; }
     if (view === 'uploads') void refreshUploads();
     else setLoading(false);
   }, [query, view, accountId, catalogFolderId]);
   useEffect(() => {
-    if (accountId && active && shelf.locked(active.id)) { setActive(null); setPdfSource(undefined); }
+    if (accountId && active && shelf.locked(active.id)) { navigation.current?.back(); setActive(null); setPdfSource(undefined); }
     if (folder && folder.locked) setFolderId(null);
     if (editBook && shelf.locked(editBook.id)) setEditBook(null);
   }, [shelf.ready, shelf.folders, shelf.items]);
@@ -229,18 +267,25 @@ export default function App() {
     try { await action(); return true; } catch (error) { notify(problem(error)); return false; }
     finally { setBusy(''); actionLock.current = false; }
   }
-  async function openPaper(paper: Paper) {
-    await run('正在打开文献…', async () => {
-      const id = userRef.current?.id;
+  async function openPaper(paper: Paper, restoredTicket?: number, notePage?: number) {
+    if (restoredTicket === undefined && actionLock.current) return;
+    const id = userRef.current?.id;
+    const ticket = restoredTicket ?? navigation.current?.enter({ notesBookId, paper, owner: id, view, query, folderId, catalogFolderId, papers, more, scroll: window.scrollY });
+    if (ticket === undefined) return;
+    const serial = ++openingSerial.current;
+    const valid = () => serial === openingSerial.current && navigation.current?.isCurrent(ticket) && userRef.current?.id === id;
+    actionLock.current = true; setBusy('正在打开文献…'); setReturnScroll(null);
+    try {
       let remark = '';
       if (id) {
         const next = await shelf.refresh();
-        if (!next || userRef.current?.id !== id) return;
+        if (!valid()) return;
+        if (!next) throw new Error('无法读取书架，请重试');
         remark = next.items.find(i => i.bookId === paper.id)?.remark || '';
         if (bookLocked(paper.id)) {
           const target = next.folders.find(f => f.id === next.items.find(i => i.bookId === paper.id)?.folderId);
           if (target) setUnlockFolder(target);
-          return;
+          navigation.current?.back(); return;
         }
       }
       if (paper.visibility === 'private' && (paper.privateOwner !== id && !userRef.current?.admin)) throw new Error('请登录上传此文件的账号');
@@ -248,26 +293,34 @@ export default function App() {
       let source: PdfSource;
       try { ({ book, source } = await cachePaper(paper)); }
       catch (error) {
+        if (!valid()) return;
         const local = await getBook(paper.id);
         const bytes = local && await readCachedPdf(local);
+        if (!valid()) return;
         if (!local || !bytes || (local.privateOwner && local.privateOwner !== id && !userRef.current?.admin)) throw error;
         book = local; source = { bytes };
         notify('正在阅读本机缓存，未能获取最新阅读包。');
       }
-      if (userRef.current?.id !== id || (id && bookLocked(paper.id))) return;
+      if (!valid()) return;
+      if (id && bookLocked(paper.id)) { navigation.current?.back(); return; }
+      const pagePatch = notePage === undefined ? {} : { page: Math.max(1, Math.min(book.pages, notePage)) };
       setCached(current => [...current.filter(item => item.id !== book.id), book]);
       if (id) {
-        await editReading(id, book.id, { opened: Date.now() });
+        await editReading(id, book.id, { opened: Date.now(), ...pagePatch });
         const state = await readAccount(id);
-        if (userRef.current?.id !== id) return;
+        if (!valid()) return;
         setPdfSource(source);
         setAccount(state); setActive({ ...book, ...state.records[book.id].data, title: remark || book.title });
       } else {
-        await patchBook(book.id, { opened: Date.now() });
-        if (userRef.current?.id !== id) return;
-        setPdfSource(source); setActive({ ...book, opened: Date.now() });
+        await patchBook(book.id, { opened: Date.now(), ...pagePatch });
+        if (!valid()) return;
+        setPdfSource(source); setActive({ ...book, opened: Date.now(), ...pagePatch });
       }
-    });
+    } catch (error) {
+      if (valid()) { notify(problem(error)); navigation.current?.back(); }
+    } finally {
+      if (serial === openingSerial.current) { setBusy(''); actionLock.current = false; }
+    }
   }
   async function reloadActivePdf() {
     const activeBook = activeRef.current;
@@ -378,12 +431,12 @@ export default function App() {
   const listed = view === 'shelf' ? shelfIds.filter(id => !shelf.locked(id) && (shelf.folders.some(f => f.id === shelf.item(id)?.folderId) ? shelf.item(id)?.folderId : null) === folderId).map(id => lookup(id) || { id, title: metadata.status[id] === 'unavailable' ? '文献已撤下或无权访问' : metadata.status[id] === 'error' ? '书籍信息加载失败' : '正在加载书籍信息…', author: '', fileName: '', size: 0, pages: personalData(id).page, bilingual: false, hasBundle: false, created: 0, updated: 0, removed: metadata.status[id] === 'unavailable' } as Paper) : papers;
   const visible = view === 'catalog' ? listed : listed.filter(p => !shelf.locked(p.id) && `${p.title} ${shelf.item(p.id)?.remark || ''} ${p.author}`.toLowerCase().includes(query.toLowerCase()));
   const titles = { catalog: '书库', shelf: '我的书架', notes: '我的笔记', uploads: '我的上传' };
-  const navigate = (next: View) => { setView(next); setQuery(''); setFolderId(null); setCatalogFolderId(null); if (accountId) void shelf.refresh().catch(() => {}); };
+  const navigate = (next: View) => { setView(next); setNotesBookId(null); setQuery(''); setFolderId(null); setCatalogFolderId(null); if (accountId) void shelf.refresh().catch(() => {}); };
   const privateView = view !== 'catalog' && !current.user;
   const closeAdmin = () => { setAdminOpen(false); history.replaceState(null, '', '/'); void refreshCatalog(); };
 
   return <>
-    {active ? <Reader key={`${accountId || 'guest'}:${active.id}`} book={active} pdfSource={pdfSource} onBack={() => { setActive(null); setPdfSource(undefined); void listBooks().then(setCached); }} onUpdate={updateReading} onReload={reloadActivePdf} notify={notify} /> :
+    {active ? <Reader key={`${accountId || 'guest'}:${active.id}`} book={active} pdfSource={pdfSource} onBack={() => navigation.current?.back()} onUpdate={updateReading} onReload={reloadActivePdf} notify={notify} /> :
       adminOpen ? current.user?.admin ? <AdminPanel key={accountId} user={current.user} revision={adminRevision} onClose={closeAdmin} onUpload={openUpload} onOrganize={openCatalogMove} onChanged={() => { setKnown({}); metadata.retry(); void refreshCatalogFolders(); }} /> : <main className="admin-shell"><button className="text-button" onClick={closeAdmin}><ArrowRight size={17} />返回书库</button><div className="empty-state"><h1>管理后台</h1>{current.user ? <p>需要管理员权限</p> : <button className="primary-button" onClick={() => setLogin(true)}>登录</button>}</div></main> :
       <div className="app-shell cloud-shell">
         <aside className="sidebar"><Logo /><nav aria-label="主导航">
@@ -395,7 +448,7 @@ export default function App() {
         <main className="library-main">
           <header className="library-top"><div className="mobile-brand"><Logo small /></div><button className="local-pill" onClick={() => current.user ? setSettings(true) : setLogin(true)}>{current.user ? <><Cloud size={14} />{current.local ? '本地测试账号' : '已登录'}{dirty > 0 && ` · ${dirty} 待同步`}</> : <><User size={14} />登录</>}<ChevronRight size={13} /></button></header>
           <div className="library-content">
-            <section className="intro"><div><h1>{titles[view]}</h1><p>{view === 'catalog' ? '自由浏览与阅读，把喜欢的文献加入自己的书架。' : view === 'shelf' ? '你的收藏与阅读进度，登录后可在不同设备间同步。' : view === 'notes' ? '' : '管理你上传的公开与私密文献。'}</p></div><div className="shelf-top-actions">{view === 'catalog' && current.user && <button className="secondary-button" disabled={!!busy || !catalogFoldersReady} onClick={() => setCatalogEditor('new')}><FolderPlus size={18} />新建文件夹</button>}{view === 'shelf' && current.user && <button className="secondary-button" disabled={!!busy || !shelf.ready} onClick={() => setFolderEditor('new')}><FolderPlus size={18} />新建文件夹</button>}<button className="primary-button import-button" disabled={!!busy} onClick={openUpload}><Plus size={18} />上传</button></div></section>
+            <section className="intro"><div><h1>{titles[view]}</h1>{view !== 'notes' && <p>{view === 'catalog' ? '自由浏览与阅读，把喜欢的文献加入自己的书架。' : view === 'shelf' ? '你的收藏与阅读进度，登录后可在不同设备间同步。' : '管理你上传的公开与私密文献。'}</p>}</div>{view !== 'notes' && <div className="shelf-top-actions">{view === 'catalog' && current.user && <button className="secondary-button" disabled={!!busy || !catalogFoldersReady} onClick={() => setCatalogEditor('new')}><FolderPlus size={18} />新建文件夹</button>}{view === 'shelf' && current.user && <button className="secondary-button" disabled={!!busy || !shelf.ready} onClick={() => setFolderEditor('new')}><FolderPlus size={18} />新建文件夹</button>}<button className="primary-button import-button" disabled={!!busy} onClick={openUpload}><Plus size={18} />上传</button></div>}</section>
             {current.local && <div className="cloud-notice"><span className="status-dot" /><span>本地预览 · 文件与测试账号仅在这台电脑的预览服务中保存</span></div>}
             {current.user && (dirty > 0 || syncError) && <div className="cloud-notice" role="status"><span>{syncError || `${dirty} 篇文献有待同步的个人记录${paused ? '，自动同步已暂停' : ''}`}</span><button className="text-button" disabled={syncing} onClick={() => void syncNow()}><RefreshCw size={14} className={syncing ? 'spin' : ''} />{syncing ? '同步中' : '重试同步'}</button></div>}
             {privateView ? <div className="empty-state"><BookOpen size={32} /><h3>登录后拥有自己的书架</h3><p>公开书库无需登录即可阅读。收藏、上传和跨设备同步需要登录。</p><button className="primary-button" onClick={() => setLogin(true)}>登录</button></div> : <>
@@ -407,7 +460,7 @@ export default function App() {
                 {!catalogFolderId && <div className="folder-grid">{catalogFolders.filter(f => f.name.toLowerCase().includes(query.toLowerCase())).map(f => <button className="folder-card" key={f.id} onClick={() => { setCatalogFolderId(f.id); setQuery(''); }}><FolderOpen size={23} /><span><strong>{f.name}</strong><small>{f.count} 本</small></span><ChevronRight size={17} /></button>)}</div>}
                 {!!query && !catalogFolderId && <p className="fineprint">搜索所有书库文件夹中的文献</p>}
               </>}
-              {current.user && view !== 'catalog' && !shelf.ready ? <div className="empty-state"><p>{shelf.error || '正在加载书架…'}</p>{shelf.error && <button className="secondary-button" onClick={() => void run('正在刷新…', async () => { await shelf.refresh(); await syncNow(); })}>重试</button>}</div> : view === 'notes' ? <><div className="section-heading"><h2>{ownRecords.reduce((n, [, r]) => n + r.data.annotations.length, 0)} 条笔记</h2><button className="text-button" onClick={() => saveFile(ownRecords.map(([id, record]) => notesMarkdown({ title: displayTitle(id), annotations: record.data.annotations } as Book)).join('\n\n---\n\n'), 'Margina-我的笔记.md')}><ArrowDownToLine size={16} />导出</button></div><div className="all-notes">{ownRecords.flatMap(([id, record]) => record.data.annotations.map(note => <article className="global-note" key={`${id}:${note.id}`}><button className="note-source" onClick={() => { const p = lookup(id); if (p) void openPaper(p); }}>{displayTitle(id)} · 第 {note.page} 页<ArrowRight size={14} /></button>{note.quote && <blockquote>{note.quote}</blockquote>}{note.text && <p>{note.text}</p>}<div className="note-copy"><CopyButton text={[note.quote, note.text].filter(Boolean).join('\n\n')} onError={() => notify('复制失败，请重试')} /></div></article>))}</div>{!ownRecords.some(([, r]) => r.data.annotations.length) && <Empty text="还没有笔记，打开文献选中文字即可记录。" />}</> : loading && !visible.length ? <div className="loading-state"><LoaderCircle className="spin" /><p>正在打开书库…</p></div> : <>
+              {current.user && view !== 'catalog' && !shelf.ready ? <div className="empty-state"><p>{shelf.error || '正在加载书架…'}</p>{shelf.error && <button className="secondary-button" onClick={() => void run('正在刷新…', async () => { await shelf.refresh(); await syncNow(); })}>重试</button>}</div> : view === 'notes' ? <BookNotes books={ownRecords.map(([id, record]) => { const paper = lookup(id); return { id, title: shelf.item(id)?.remark || paper?.title || '文献信息待更新', author: paper?.author || '', annotations: record.data.annotations, readable: !!paper && (!paper.removed || cached.some(book => book.id === id)) }; })} expanded={notesBookId} onExpand={setNotesBookId} onRead={(id, page) => { const paper = lookup(id); if (paper) void openPaper(paper, undefined, page); }} busy={!!busy} notify={notify} /> : loading && !visible.length ? <div className="loading-state"><LoaderCircle className="spin" /><p>正在打开书库…</p></div> : <>
                 {view === 'shelf' && <>
                   <div className="folder-toolbar">{folder ? <><button className="text-button" onClick={() => setFolderId(null)}>‹ 书架</button><strong>{folder.name}</strong><button className="icon-button" aria-label="管理文件夹" onClick={() => setFolderEditor(folder)}><Settings2 size={18} /></button>{folder.protected && <button className="text-button" disabled={!!busy} onClick={() => void run('正在锁定…', async () => { await syncNow(); await shelf.mutate(`/folders/${folder.id}/lock`, 'POST'); setFolderId(null); })}><LockKeyhole size={16} />锁定</button>}</> : null}</div>
                   {!folderId && <div className="folder-grid">{shelf.folders.filter(f => f.name.toLowerCase().includes(query.toLowerCase())).map(f => <button className="folder-card" key={f.id} onClick={() => { if (f.locked) setUnlockFolder(f); else setFolderId(f.id); }}>{f.locked ? <LockKeyhole size={23} /> : <FolderOpen size={23} />}<span><strong>{f.name}</strong><small>{f.count} 本</small></span><ChevronRight size={17} /></button>)}</div>}
@@ -417,9 +470,10 @@ export default function App() {
                   const data = accountId && shelf.locked(paper.id) ? emptyReading() : personalData(paper.id); const cache = cached.find(b => b.id === paper.id);
                   const unresolved = view === 'shelf' && !lookup(paper.id);
                   return <article className="book-card" key={paper.id}>
-                    <button className="book-cover public-cover" aria-label={`阅读 ${title}`} disabled={!!busy || unresolved || (paper.removed && !cache)} onClick={() => void openPaper(paper)}>
+                    <button className="book-cover public-cover" aria-label={`阅读 ${title}${current.user && data.annotations.length ? `，${data.annotations.length} 条笔记` : ''}`} disabled={!!busy || unresolved || (paper.removed && !cache)} onClick={() => void openPaper(paper)}>
                       {!unresolved && (paper.removed || paper.visibility === 'private') && <div className="cover-top"><span>{paper.removed ? (metadata.status[paper.id] === 'unavailable' ? '无法访问' : '已撤下') : '私密'}</span></div>}
                       <PaperCover owner={accountId} key={`${accountId || 'guest'}:${paper.id}`} paper={paper} title={title} cachedCover={cache?.bilingual === paper.bilingual ? cache.cover : undefined} allowed={!unresolved && (paper.visibility !== 'private' || (!!current.user && !shelf.locked(paper.id) && (paper.privateOwner === accountId || current.user.admin)))} />
+                      {!!current.user && <NoteCount count={data.annotations.length} />}
                       {!unresolved && <div className="cover-bottom"><span>{paper.pages} 页</span></div>}
                     </button>
                     <div className="book-info">
